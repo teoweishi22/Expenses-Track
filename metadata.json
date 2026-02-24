@@ -1,5 +1,5 @@
 {
   "name": "Expenses Track",
-  "description": "A sophisticated expense tracker that allows you to record daily spending and automatically split costs among friends with AI-powered financial insights.",
+  "description": "A sophisticated expense tracker with Supabase cloud sync, AI-powered financial insights, and automated cost splitting among friends.",
   "requestFramePermissions": []
 }

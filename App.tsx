@@ -7,6 +7,7 @@ import { compressImage } from './src/utils/image';
 import Layout from './components/Layout';
 import ExpenseForm from './components/ExpenseForm';
 import Charts from './components/Charts';
+import Notes from './components/Notes';
 import { Expense, Person, Balance } from './types';
 import { getFinancialInsights } from './services/geminiService';
 import { CATEGORIES as INITIAL_CATEGORIES } from './constants';
@@ -22,7 +23,7 @@ const CURRENCY = 'RM';
 const SYNC_INTERVAL = 10000; // Poll every 10 seconds for sync
 
 const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'expenses' | 'people'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'expenses' | 'people' | 'notes'>('dashboard');
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [people, setPeople] = useState<Person[]>(INITIAL_PEOPLE);
   const [categories, setCategories] = useState<string[]>(INITIAL_CATEGORIES);
@@ -69,12 +70,14 @@ const App: React.FC = () => {
   const getRoomId = () => window.location.hash.replace('#room=', '');
   
   const syncToCloud = useCallback(async (data: any) => {
-    const roomId = getRoomId();
-    if (!roomId) return;
-    
     setIsSyncing(true);
     try {
-      localStorage.setItem(`cloud_sync_${roomId}`, JSON.stringify(data));
+      const response = await fetch('/api/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      });
+      if (!response.ok) throw new Error("Sync failed");
     } catch (e) {
       console.error("Sync Error", e);
     } finally {
@@ -82,17 +85,18 @@ const App: React.FC = () => {
     }
   }, []);
 
-  const loadFromCloud = useCallback(() => {
-    const roomId = getRoomId();
-    if (!roomId) return;
-    
-    const cloudData = localStorage.getItem(`cloud_sync_${roomId}`);
-    if (cloudData) {
-      const parsed = JSON.parse(cloudData);
-      if (parsed.expenses) setExpenses(parsed.expenses);
-      if (parsed.people) setPeople(parsed.people);
-      if (parsed.categories) setCategories(parsed.categories);
-      if (parsed.paymentMethods) setPaymentMethods(parsed.paymentMethods);
+  const loadFromCloud = useCallback(async () => {
+    try {
+      const response = await fetch('/api/data');
+      if (!response.ok) throw new Error("Load failed");
+      const parsed = await response.json();
+      
+      if (parsed.expenses && parsed.expenses.length > 0) setExpenses(parsed.expenses);
+      if (parsed.people && parsed.people.length > 0) setPeople(parsed.people);
+      if (parsed.categories && parsed.categories.length > 0) setCategories(parsed.categories);
+      if (parsed.paymentMethods && parsed.paymentMethods.length > 0) setPaymentMethods(parsed.paymentMethods);
+    } catch (e) {
+      console.error("Load Error", e);
     }
   }, []);
 
@@ -122,9 +126,7 @@ const App: React.FC = () => {
     localStorage.setItem('categories', JSON.stringify(categories));
     localStorage.setItem('paymentMethods', JSON.stringify(paymentMethods));
     
-    if (getRoomId()) {
-      syncToCloud(data);
-    }
+    syncToCloud(data);
   }, [expenses, people, categories, paymentMethods, syncToCloud]);
 
   const fetchInsights = useCallback(async () => {
@@ -777,6 +779,10 @@ const App: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {activeTab === 'notes' && (
+        <Notes />
       )}
 
       {isAddingExpense && (
