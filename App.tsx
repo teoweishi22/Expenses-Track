@@ -39,6 +39,9 @@ const App: React.FC = () => {
   const [zoomedReceipt, setZoomedReceipt] = useState<string | null>(null);
   const [configRequired, setConfigRequired] = useState(false);
   
+  // Ref to track if update is from remote to prevent sync loops
+  const isRemoteUpdate = useRef(false);
+  
   // Export Date Range State
   const [exportStartDate, setExportStartDate] = useState('');
   const [exportEndDate, setExportEndDate] = useState('');
@@ -71,6 +74,8 @@ const App: React.FC = () => {
   const getRoomId = () => window.location.hash.replace('#room=', '');
   
   const syncToCloud = useCallback(async (data: any) => {
+    if (isRemoteUpdate.current) return;
+    
     setIsSyncing(true);
     try {
       const response = await fetch('/api/sync', {
@@ -78,11 +83,19 @@ const App: React.FC = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data)
       });
-      if (!response.ok) {
-        const errData = await response.json();
-        if (errData.error === "Supabase not configured") setConfigRequired(true);
-        throw new Error(errData.error || "Sync failed");
+      
+      const contentType = response.headers.get("content-type");
+      if (contentType && contentType.indexOf("application/json") !== -1) {
+        if (!response.ok) {
+          const errData = await response.json();
+          if (errData.error === "Supabase not configured") setConfigRequired(true);
+          throw new Error(errData.error || "Sync failed");
+        }
+      } else {
+        const text = await response.text();
+        if (!response.ok) throw new Error(text || "Sync failed (non-JSON response)");
       }
+      
       setConfigRequired(false);
     } catch (e: any) {
       console.error("Sync Error:", e.message);
@@ -94,18 +107,33 @@ const App: React.FC = () => {
   const loadFromCloud = useCallback(async () => {
     try {
       const response = await fetch('/api/data');
-      if (!response.ok) {
-        const errData = await response.json();
-        if (errData.error === "Supabase not configured") setConfigRequired(true);
-        throw new Error(errData.error || "Load failed");
-      }
-      const parsed = await response.json();
-      setConfigRequired(false);
       
-      if (parsed.expenses && parsed.expenses.length > 0) setExpenses(parsed.expenses);
-      if (parsed.people && parsed.people.length > 0) setPeople(parsed.people);
-      if (parsed.categories && parsed.categories.length > 0) setCategories(parsed.categories);
-      if (parsed.paymentMethods && parsed.paymentMethods.length > 0) setPaymentMethods(parsed.paymentMethods);
+      const contentType = response.headers.get("content-type");
+      if (contentType && contentType.indexOf("application/json") !== -1) {
+        if (!response.ok) {
+          const errData = await response.json();
+          if (errData.error === "Supabase not configured") setConfigRequired(true);
+          throw new Error(errData.error || "Load failed");
+        }
+        
+        const parsed = await response.json();
+        setConfigRequired(false);
+        
+        isRemoteUpdate.current = true;
+        if (parsed.expenses && parsed.expenses.length > 0) setExpenses(parsed.expenses);
+        if (parsed.people && parsed.people.length > 0) setPeople(parsed.people);
+        if (parsed.categories && parsed.categories.length > 0) setCategories(parsed.categories);
+        if (parsed.paymentMethods && parsed.paymentMethods.length > 0) setPaymentMethods(parsed.paymentMethods);
+        
+        // Reset flag after state updates are processed
+        setTimeout(() => {
+          isRemoteUpdate.current = false;
+        }, 100);
+      } else {
+        const text = await response.text();
+        if (!response.ok) throw new Error(text || "Load failed (non-JSON response)");
+        console.warn("Received non-JSON response from /api/data:", text);
+      }
     } catch (e: any) {
       console.error("Load Error:", e.message);
     }

@@ -28,36 +28,40 @@ const Charts: React.FC<ChartsProps> = ({ expenses }) => {
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-      <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 h-80">
+      <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 h-80 flex flex-col">
         <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-4">By Category</h3>
-        <ResponsiveContainer width="100%" height="90%">
-          <PieChart>
-            <Pie
-              data={categoryData}
-              innerRadius={60}
-              outerRadius={80}
-              paddingAngle={5}
-              dataKey="value"
-            >
-              {categoryData.map((entry, index) => (
-                <Cell key={`cell-${index}`} fill={CATEGORY_COLORS[entry.name] || '#CBD5E1'} />
-              ))}
-            </Pie>
-            <Tooltip />
-          </PieChart>
-        </ResponsiveContainer>
+        <div className="flex-1 min-h-0">
+          <ResponsiveContainer width="100%" height="100%">
+            <PieChart>
+              <Pie
+                data={categoryData}
+                innerRadius={60}
+                outerRadius={80}
+                paddingAngle={5}
+                dataKey="value"
+              >
+                {categoryData.map((entry, index) => (
+                  <Cell key={`cell-${index}`} fill={CATEGORY_COLORS[entry.name] || '#CBD5E1'} />
+                ))}
+              </Pie>
+              <Tooltip />
+            </PieChart>
+          </ResponsiveContainer>
+        </div>
       </div>
 
-      <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 h-80">
+      <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 h-80 flex flex-col">
         <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-4">Recent Spending</h3>
-        <ResponsiveContainer width="100%" height="90%">
-          <BarChart data={recentSpending}>
-            <XAxis dataKey="name" fontSize={10} axisLine={false} tickLine={false} />
-            <YAxis hide />
-            <Tooltip cursor={{fill: '#f1f5f9'}} />
-            <Bar dataKey="amount" fill="#6366f1" radius={[4, 4, 0, 0]} />
-          </BarChart>
-        </ResponsiveContainer>
+        <div className="flex-1 min-h-0">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={recentSpending}>
+              <XAxis dataKey="name" fontSize={10} axisLine={false} tickLine={false} />
+              <YAxis hide />
+              <Tooltip cursor={{fill: '#f1f5f9'}} />
+              <Bar dataKey="amount" fill="#6366f1" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
       </div>
     </div>
   );
