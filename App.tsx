@@ -20,7 +20,7 @@ const INITIAL_PEOPLE: Person[] = [
 
 const INITIAL_PAYMENT_METHODS = ['Cash', 'eWallet', 'Credit Card'];
 const CURRENCY = 'RM';
-const SYNC_INTERVAL = 10000; // Poll every 10 seconds for sync
+const SYNC_INTERVAL = 60000; // Poll every 60 seconds for sync
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'expenses' | 'people' | 'notes'>('dashboard');
@@ -87,7 +87,14 @@ const App: React.FC = () => {
       const contentType = response.headers.get("content-type");
       if (contentType && contentType.indexOf("application/json") !== -1) {
         if (!response.ok) {
-          const errData = await response.json();
+          let errData;
+          try {
+            errData = await response.json();
+          } catch (jsonError) {
+            // Fallback if JSON parsing fails even with correct content-type
+            const text = await response.text();
+            throw new Error(text || "Sync failed (malformed JSON)");
+          }
           if (errData.error === "Supabase not configured") setConfigRequired(true);
           throw new Error(errData.error || "Sync failed");
         }
@@ -111,12 +118,26 @@ const App: React.FC = () => {
       const contentType = response.headers.get("content-type");
       if (contentType && contentType.indexOf("application/json") !== -1) {
         if (!response.ok) {
-          const errData = await response.json();
+          let errData;
+          try {
+            errData = await response.json();
+          } catch (jsonError) {
+             const text = await response.text();
+             throw new Error(text || "Load failed (malformed JSON)");
+          }
           if (errData.error === "Supabase not configured") setConfigRequired(true);
           throw new Error(errData.error || "Load failed");
         }
         
-        const parsed = await response.json();
+        let parsed;
+        try {
+          parsed = await response.json();
+        } catch (jsonError) {
+           const text = await response.text();
+           console.warn("Received malformed JSON from /api/data:", text);
+           throw new Error("Load failed (malformed JSON)");
+        }
+        
         setConfigRequired(false);
         
         isRemoteUpdate.current = true;
