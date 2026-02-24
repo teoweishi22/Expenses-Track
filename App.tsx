@@ -36,7 +36,10 @@ const App: React.FC = () => {
   const [insights, setInsights] = useState<string>('Recording your first expense...');
   const [isLoadingInsights, setIsLoadingInsights] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
   const [zoomedReceipt, setZoomedReceipt] = useState<string | null>(null);
+  
+  const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
   // Export Date Range State
   const [exportStartDate, setExportStartDate] = useState('');
@@ -70,33 +73,48 @@ const App: React.FC = () => {
   const getRoomId = () => window.location.hash.replace('#room=', '');
   
   const syncToCloud = useCallback(async (data: any) => {
-    setIsSyncing(true);
-    try {
-      const response = await fetch('/api/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data)
-      });
-      if (!response.ok) throw new Error("Sync failed");
-    } catch (e) {
-      console.error("Sync Error", e);
-    } finally {
-      setTimeout(() => setIsSyncing(false), 1000);
-    }
+    if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
+
+    syncTimeoutRef.current = setTimeout(async () => {
+      setIsSyncing(true);
+      setSyncError(null);
+      try {
+        const response = await fetch('/api/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        });
+        
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.error || `Sync failed (${response.status})`);
+        }
+      } catch (e: any) {
+        console.error("Sync Error:", e.message);
+        setSyncError(e.message);
+      } finally {
+        setIsSyncing(false);
+      }
+    }, 2000); // Debounce sync by 2 seconds
   }, []);
 
   const loadFromCloud = useCallback(async () => {
     try {
       const response = await fetch('/api/data');
-      if (!response.ok) throw new Error("Load failed");
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `Load failed (${response.status})`);
+      }
       const parsed = await response.json();
       
       if (parsed.expenses && parsed.expenses.length > 0) setExpenses(parsed.expenses);
       if (parsed.people && parsed.people.length > 0) setPeople(parsed.people);
       if (parsed.categories && parsed.categories.length > 0) setCategories(parsed.categories);
       if (parsed.paymentMethods && parsed.paymentMethods.length > 0) setPaymentMethods(parsed.paymentMethods);
-    } catch (e) {
-      console.error("Load Error", e);
+      setSyncError(null);
+    } catch (e: any) {
+      console.error("Load Error:", e.message);
+      // Don't set syncError here to avoid flashing errors on initial load if Supabase isn't ready
     }
   }, []);
 
