@@ -36,10 +36,8 @@ const App: React.FC = () => {
   const [insights, setInsights] = useState<string>('Recording your first expense...');
   const [isLoadingInsights, setIsLoadingInsights] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [syncError, setSyncError] = useState<string | null>(null);
   const [zoomedReceipt, setZoomedReceipt] = useState<string | null>(null);
-  
-  const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [configRequired, setConfigRequired] = useState(false);
   
   // Export Date Range State
   const [exportStartDate, setExportStartDate] = useState('');
@@ -73,48 +71,43 @@ const App: React.FC = () => {
   const getRoomId = () => window.location.hash.replace('#room=', '');
   
   const syncToCloud = useCallback(async (data: any) => {
-    if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
-
-    syncTimeoutRef.current = setTimeout(async () => {
-      setIsSyncing(true);
-      setSyncError(null);
-      try {
-        const response = await fetch('/api/sync', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(data)
-        });
-        
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          throw new Error(errorData.error || `Sync failed (${response.status})`);
-        }
-      } catch (e: any) {
-        console.error("Sync Error:", e.message);
-        setSyncError(e.message);
-      } finally {
-        setIsSyncing(false);
+    setIsSyncing(true);
+    try {
+      const response = await fetch('/api/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      });
+      if (!response.ok) {
+        const errData = await response.json();
+        if (errData.error === "Supabase not configured") setConfigRequired(true);
+        throw new Error(errData.error || "Sync failed");
       }
-    }, 2000); // Debounce sync by 2 seconds
+      setConfigRequired(false);
+    } catch (e: any) {
+      console.error("Sync Error:", e.message);
+    } finally {
+      setTimeout(() => setIsSyncing(false), 1000);
+    }
   }, []);
 
   const loadFromCloud = useCallback(async () => {
     try {
       const response = await fetch('/api/data');
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || `Load failed (${response.status})`);
+        const errData = await response.json();
+        if (errData.error === "Supabase not configured") setConfigRequired(true);
+        throw new Error(errData.error || "Load failed");
       }
       const parsed = await response.json();
+      setConfigRequired(false);
       
       if (parsed.expenses && parsed.expenses.length > 0) setExpenses(parsed.expenses);
       if (parsed.people && parsed.people.length > 0) setPeople(parsed.people);
       if (parsed.categories && parsed.categories.length > 0) setCategories(parsed.categories);
       if (parsed.paymentMethods && parsed.paymentMethods.length > 0) setPaymentMethods(parsed.paymentMethods);
-      setSyncError(null);
     } catch (e: any) {
       console.error("Load Error:", e.message);
-      // Don't set syncError here to avoid flashing errors on initial load if Supabase isn't ready
     }
   }, []);
 
@@ -496,6 +489,26 @@ const App: React.FC = () => {
 
   return (
     <Layout activeTab={activeTab} onTabChange={setActiveTab}>
+      {configRequired && (
+        <div className="mb-6 p-6 bg-amber-50 border border-amber-200 rounded-3xl animate-in fade-in slide-in-from-top duration-500">
+          <div className="flex items-start gap-4">
+            <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center text-amber-600 shrink-0">
+              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+            </div>
+            <div className="space-y-2">
+              <h3 className="font-bold text-amber-900">Supabase Configuration Required</h3>
+              <p className="text-sm text-amber-800 leading-relaxed">
+                Cloud sync is currently disabled. To enable it, please add your Supabase credentials to the <strong>AI Studio Environment Variables</strong>:
+              </p>
+              <div className="bg-white/50 p-3 rounded-xl border border-amber-100 font-mono text-xs space-y-1">
+                <p>SUPABASE_URL=https://eefjyoxdkunltjrnwqko.supabase.co</p>
+                <p>SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...</p>
+              </div>
+              <p className="text-[10px] text-amber-600 italic">The app will automatically reconnect once these variables are set.</p>
+            </div>
+          </div>
+        </div>
+      )}
       <input 
         type="file" 
         ref={fileInputRef} 
