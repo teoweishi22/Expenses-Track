@@ -1,0 +1,5 @@
+{
+  "name": "Expenses Track",
+  "description": "A sophisticated expense tracker that allows you to record daily spending and automatically split costs among friends with AI-powered financial insights.",
+  "requestFramePermissions": []
+}
