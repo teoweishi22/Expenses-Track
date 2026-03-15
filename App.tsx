@@ -40,8 +40,37 @@ const App: React.FC = () => {
   const [configRequired, setConfigRequired] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
   
-  // Ref to track if update is from remote to prevent sync loops
-  const isRemoteUpdate = useRef(false);
+  const [roomId, setRoomId] = useState<string>(() => {
+    let hash = window.location.hash.replace('#room=', '');
+    if (hash) {
+      localStorage.setItem('roomId', hash);
+      return hash;
+    }
+    let savedRoomId = localStorage.getItem('roomId');
+    if (!savedRoomId) {
+      savedRoomId = uuidv4().substring(0, 8);
+      localStorage.setItem('roomId', savedRoomId);
+    }
+    window.location.hash = `room=${savedRoomId}`;
+    return savedRoomId;
+  });
+
+  useEffect(() => {
+    const handleHashChange = () => {
+      const hash = window.location.hash.replace('#room=', '');
+      if (hash && hash !== roomId) {
+        localStorage.setItem('roomId', hash);
+        setRoomId(hash);
+      }
+    };
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, [roomId]);
+  
+  const isLocalUpdate = useRef(false);
+  const triggerSync = () => {
+    isLocalUpdate.current = true;
+  };
   
   // Export Date Range State
   const [exportStartDate, setExportStartDate] = useState('');
@@ -72,14 +101,9 @@ const App: React.FC = () => {
     return { start, end };
   }, []);
 
-  const getRoomId = () => window.location.hash.replace('#room=', '');
-  
   const syncToCloud = useCallback(async (data: any) => {
-    if (isRemoteUpdate.current) return;
-    
     setIsSyncing(true);
     try {
-      const roomId = getRoomId();
       if (!roomId) {
         setIsSyncing(false);
         return;
@@ -116,10 +140,9 @@ const App: React.FC = () => {
     } finally {
       setTimeout(() => setIsSyncing(false), 1000);
     }
-  }, []);
+  }, [roomId]);
 
   const loadFromCloud = useCallback(async () => {
-    const roomId = getRoomId();
     if (!roomId) return; // Don't fetch if no room
 
     try {
@@ -152,8 +175,6 @@ const App: React.FC = () => {
         
         setConfigRequired(false);
         
-        isRemoteUpdate.current = true;
-        
         // If the database is completely empty (new user), don't overwrite the initial state
         const isDbEmpty = (parsed.expenses?.length === 0) && 
                           (parsed.people?.length === 0) && 
@@ -167,15 +188,10 @@ const App: React.FC = () => {
           setPaymentMethods(parsed.paymentMethods || []);
         } else {
           // Force a sync of the initial local state to the empty database
-          isRemoteUpdate.current = false;
+          triggerSync();
         }
         
         setIsInitialized(true);
-        
-        // Reset flag after state updates are processed
-        setTimeout(() => {
-          isRemoteUpdate.current = false;
-        }, 100);
       } else {
         const text = await response.text();
         if (!response.ok) throw new Error(text || "Load failed (non-JSON response)");
@@ -185,21 +201,11 @@ const App: React.FC = () => {
       console.error("Load Error:", e.message);
       setIsInitialized(true);
     }
-  }, []);
+  }, [roomId]);
 
   useEffect(() => {
-    const savedExpenses = localStorage.getItem('expenses');
-    const savedPeople = localStorage.getItem('people');
-    const savedCategories = localStorage.getItem('categories');
-    const savedMethods = localStorage.getItem('paymentMethods');
-    if (savedExpenses) setExpenses(JSON.parse(savedExpenses));
-    if (savedPeople) setPeople(JSON.parse(savedPeople));
-    if (savedCategories) setCategories(JSON.parse(savedCategories));
-    if (savedMethods) setPaymentMethods(JSON.parse(savedMethods));
-
     loadFromCloud();
 
-    const roomId = getRoomId();
     if (!roomId) return;
 
     let channel: any;
@@ -242,26 +248,17 @@ const App: React.FC = () => {
         supabase.removeChannel(channel);
       }
     };
-  }, [loadFromCloud]);
+  }, [loadFromCloud, roomId]);
 
   useEffect(() => {
-    const data = { expenses, people, categories, paymentMethods };
-    localStorage.setItem('expenses', JSON.stringify(expenses));
-    localStorage.setItem('people', JSON.stringify(people));
-    localStorage.setItem('categories', JSON.stringify(categories));
-    localStorage.setItem('paymentMethods', JSON.stringify(paymentMethods));
-    
-    if (!isInitialized || isRemoteUpdate.current) return;
+    if (!isLocalUpdate.current) return;
 
-    const roomId = getRoomId();
+    const data = { expenses, people, categories, paymentMethods };
     if (!roomId) return;
 
-    const timeoutId = setTimeout(() => {
-      syncToCloud({ ...data, roomId });
-    }, 500);
-    
-    return () => clearTimeout(timeoutId);
-  }, [expenses, people, categories, paymentMethods, syncToCloud, isInitialized]);
+    syncToCloud({ ...data, roomId });
+    isLocalUpdate.current = false;
+  }, [expenses, people, categories, paymentMethods, isInitialized, syncToCloud, roomId]);
 
   const fetchInsights = useCallback(async () => {
     if (expenses.length > 0) {
@@ -280,16 +277,19 @@ const App: React.FC = () => {
     const expense = { ...newExpense, id: uuidv4() };
     setExpenses(prev => [...prev, expense]);
     setIsAddingExpense(false);
+    triggerSync();
   };
 
   const handleUpdateExpense = (id: string, updatedData: Omit<Expense, 'id'>) => {
     setExpenses(prev => prev.map(exp => exp.id === id ? { ...updatedData, id } : exp));
     setEditingExpense(null);
+    triggerSync();
   };
 
   const handleDeleteExpense = (id: string) => {
     setExpenses(prev => prev.filter(exp => exp.id !== id));
     setEditingExpense(null);
+    triggerSync();
   };
 
   const handleAddPerson = () => {
@@ -301,11 +301,13 @@ const App: React.FC = () => {
       avatar: `https://picsum.photos/seed/${name}/100`
     };
     setPeople(prev => [...prev, newPerson]);
+    triggerSync();
   };
 
   const handleUpdatePerson = (id: string, updates: Partial<Person>) => {
     setPeople(prev => prev.map(p => p.id === id ? { ...p, ...updates } : p));
     setEditingPerson(null);
+    triggerSync();
   };
 
   const handleDeletePerson = (id: string) => {
@@ -315,6 +317,7 @@ const App: React.FC = () => {
     }
     if (confirm("Are you sure? This will remove this person from the list. History involving them will remain.")) {
       setPeople(prev => prev.filter(p => p.id !== id));
+      triggerSync();
     }
   };
 
@@ -322,6 +325,7 @@ const App: React.FC = () => {
     const name = prompt("Enter new category name:");
     if (name && !categories.includes(name)) {
       setCategories(prev => [...prev, name]);
+      triggerSync();
     }
   };
 
@@ -331,6 +335,7 @@ const App: React.FC = () => {
       setCategories(prev => prev.map(c => c === oldName ? newName : c));
       // Update historical expenses
       setExpenses(prev => prev.map(exp => exp.category === oldName ? { ...exp, category: newName } : exp));
+      triggerSync();
     }
   };
 
@@ -341,6 +346,7 @@ const App: React.FC = () => {
     }
     if (confirm(`Delete category "${cat}"?`)) {
       setCategories(prev => prev.filter(c => c !== cat));
+      triggerSync();
     }
   };
 
@@ -348,6 +354,7 @@ const App: React.FC = () => {
     const name = prompt("Enter payment method or merchant (e.g., GrabPay, TNG, Visa):");
     if (name && !paymentMethods.includes(name)) {
       setPaymentMethods(prev => [...prev, name]);
+      triggerSync();
     }
   };
 
@@ -358,6 +365,7 @@ const App: React.FC = () => {
     }
     if (confirm(`Delete payment method "${method}"?`)) {
       setPaymentMethods(prev => prev.filter(m => m !== method));
+      triggerSync();
     }
   };
 
@@ -604,10 +612,8 @@ const App: React.FC = () => {
   }, [people, expenses]);
 
   const generateSyncLink = () => {
-    const roomId = uuidv4().substring(0, 8);
     const link = `${window.location.origin}${window.location.pathname}#room=${roomId}`;
     prompt("Share this link with your group for live updates:", link);
-    window.location.hash = `room=${roomId}`;
   };
 
   return (
@@ -644,12 +650,12 @@ const App: React.FC = () => {
         <div className="space-y-6 animate-in fade-in duration-500">
           <div className="flex justify-between items-center bg-white px-6 py-3 rounded-2xl border border-slate-100 shadow-sm">
              <div className="flex items-center gap-2">
-                <div className={`w-2 h-2 rounded-full ${getRoomId() ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`}></div>
+                <div className={`w-2 h-2 rounded-full ${roomId ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`}></div>
                 <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
-                  {getRoomId() ? `Sync Active: Room ${getRoomId()}` : 'Offline Mode (Local Only)'}
+                  {roomId ? `Sync Active: Room ${roomId}` : 'Offline Mode (Local Only)'}
                 </span>
              </div>
-             {!getRoomId() && (
+             {!roomId && (
                <button onClick={generateSyncLink} className="text-[10px] font-bold text-indigo-600 hover:underline">Enable Cloud Sync</button>
              )}
           </div>
