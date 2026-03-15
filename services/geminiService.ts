@@ -2,11 +2,27 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { Expense } from "../types";
 
-// Always use a named parameter and direct process.env.API_KEY as per guidelines
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+let aiClient: GoogleGenAI | null = null;
+
+const getAiClient = () => {
+  if (!aiClient) {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      console.warn("GEMINI_API_KEY is missing. AI features will be disabled.");
+      return null;
+    }
+    aiClient = new GoogleGenAI({ apiKey });
+  }
+  return aiClient;
+};
 
 export const getFinancialInsights = async (expenses: Expense[]) => {
   try {
+    const ai = getAiClient();
+    if (!ai) {
+      return "AI insights are currently unavailable (API key missing). Keep tracking your expenses!";
+    }
+
     const summary = expenses.map(e => ({
       desc: e.description,
       amt: e.amount,
