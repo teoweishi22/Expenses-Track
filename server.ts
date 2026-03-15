@@ -123,105 +123,96 @@ app.post("/api/notes", async (req, res) => {
 
 // Sync data
 app.post("/api/sync", async (req, res) => {
-  if (!supabase) {
-    console.error("Supabase client not initialized for sync.");
-    return res.status(500).json({ error: "Supabase not configured" });
-  }
+  if (!supabase) return res.status(500).json({ error: "Supabase not configured" });
 
   const { expenses, people, categories, paymentMethods } = req.body;
-  const roomId = 'private'; // Hardcoded for private use
+  const roomId = 'private'; 
 
   console.log(`--- Syncing Data for Room: ${roomId} ---`);
-  console.log(`Expenses: ${expenses?.length || 0}, People: ${people?.length || 0}`);
 
   try {
+    // 1. Sync People
     if (people) {
-      if (people.length > 0) {
-        const mappedPeople = people.map((p: any) => ({ ...p, room_id: roomId }));
+      const mappedPeople = people.map((p: any) => ({ ...p, room_id: roomId }));
+      if (mappedPeople.length > 0) {
         const { error: pError } = await supabase.from('people').upsert(mappedPeople);
         if (pError) throw pError;
         
-        const currentIds = people.map((p: any) => p.id);
-        const { data: existing } = await supabase.from('people').select('id').eq('room_id', roomId);
-        const existingIds = existing?.map(e => e.id) || [];
-        const idsToDelete = existingIds.filter(id => !currentIds.includes(id));
-        if (idsToDelete.length > 0) {
-          await supabase.from('people').delete().in('id', idsToDelete).eq('room_id', roomId);
-        }
+        const currentIds = mappedPeople.map(p => p.id);
+        await supabase.from('people').delete().eq('room_id', roomId).not('id', 'in', `(${currentIds.join(',')})`);
       } else {
         await supabase.from('people').delete().eq('room_id', roomId);
       }
     }
 
+    // 2. Sync Expenses
     if (expenses) {
-      if (expenses.length > 0) {
-        // Map frontend fields to database columns
-        const mappedExpenses = expenses.map((exp: any) => ({
-          id: exp.id,
-          description: exp.description,
-          amount: exp.amount,
-          date: exp.date,
-          category: exp.category,
-          payer_id: exp.paidBy,
-          payment_method: exp.paymentMethod,
-          remarks: exp.remarks,
-          receipt_url: exp.receiptUrl,
-          splits: exp.splits,
-          room_id: roomId
-        }));
+      const mappedExpenses = expenses.map((exp: any) => ({
+        id: exp.id,
+        description: exp.description,
+        amount: exp.amount,
+        date: exp.date,
+        category: exp.category,
+        payer_id: exp.paidBy,
+        payment_method: exp.paymentMethod,
+        remarks: exp.remarks || '',
+        receipt_url: exp.receiptUrl || null,
+        splits: exp.splits,
+        room_id: roomId
+      }));
+
+      if (mappedExpenses.length > 0) {
         const { error: expError } = await supabase.from('expenses').upsert(mappedExpenses);
         if (expError) throw expError;
         
         const currentIds = mappedExpenses.map(e => e.id);
-        const { data: existing } = await supabase.from('expenses').select('id').eq('room_id', roomId);
-        const existingIds = existing?.map(e => e.id) || [];
-        const idsToDelete = existingIds.filter(id => !currentIds.includes(id));
-        if (idsToDelete.length > 0) {
-          await supabase.from('expenses').delete().in('id', idsToDelete).eq('room_id', roomId);
-        }
+        await supabase.from('expenses').delete().eq('room_id', roomId).not('id', 'in', `(${currentIds.join(',')})`);
       } else {
         await supabase.from('expenses').delete().eq('room_id', roomId);
       }
     }
 
+    // 3. Sync Categories
     if (categories) {
-      if (categories.length > 0) {
-        const catData = categories.map((name: string) => ({ name, room_id: roomId }));
-        // Try to upsert with name as conflict target first, as it's the most common constraint
+      const catData = categories.map((name: string) => ({ name, room_id: roomId }));
+      if (catData.length > 0) {
         const { error: cError } = await supabase.from('categories').upsert(catData, { onConflict: 'name' });
         if (cError) {
           console.warn("Upsert categories with 'name' failed, trying 'name, room_id'", cError.message);
           const { error: cError2 } = await supabase.from('categories').upsert(catData, { onConflict: 'name, room_id' });
-          if (cError2) throw cError2;
+          if (cError2) {
+            console.warn("Upsert categories failed, falling back to delete/insert");
+            await supabase.from('categories').delete().eq('room_id', roomId);
+            const { error: cError3 } = await supabase.from('categories').insert(catData);
+            if (cError3) throw cError3;
+          }
         }
         
-        const { data: existing } = await supabase.from('categories').select('name').eq('room_id', roomId);
-        const existingNames = existing?.map(e => e.name) || [];
-        const namesToDelete = existingNames.filter(name => !categories.includes(name));
-        if (namesToDelete.length > 0) {
-          await supabase.from('categories').delete().in('name', namesToDelete).eq('room_id', roomId);
-        }
+        const escapedNames = categories.map(c => `'${c.replace(/'/g, "''")}'`).join(',');
+        await supabase.from('categories').delete().eq('room_id', roomId).not('name', 'in', `(${escapedNames})`);
       } else {
         await supabase.from('categories').delete().eq('room_id', roomId);
       }
     }
 
+    // 4. Sync Payment Methods
     if (paymentMethods) {
-      if (paymentMethods.length > 0) {
-        const methodData = paymentMethods.map((name: string) => ({ name, room_id: roomId }));
+      const methodData = paymentMethods.map((name: string) => ({ name, room_id: roomId }));
+      if (methodData.length > 0) {
         const { error: mError } = await supabase.from('payment_methods').upsert(methodData, { onConflict: 'name' });
         if (mError) {
-          console.warn("Upsert payment_methods with 'name' failed, trying 'name, room_id'", mError.message);
+          console.warn("Upsert methods with 'name' failed, trying 'name, room_id'", mError.message);
           const { error: mError2 } = await supabase.from('payment_methods').upsert(methodData, { onConflict: 'name, room_id' });
-          if (mError2) throw mError2;
+          if (mError2) {
+            console.warn("Upsert methods failed, falling back to delete/insert");
+            await supabase.from('payment_methods').delete().eq('room_id', roomId);
+            const { error: mError3 } = await supabase.from('payment_methods').insert(methodData);
+            if (mError3) throw mError3;
+          }
         }
         
-        const { data: existing } = await supabase.from('payment_methods').select('name').eq('room_id', roomId);
-        const existingNames = existing?.map(e => e.name) || [];
-        const namesToDelete = existingNames.filter(name => !paymentMethods.includes(name));
-        if (namesToDelete.length > 0) {
-          await supabase.from('payment_methods').delete().in('name', namesToDelete).eq('room_id', roomId);
-        }
+        const escapedMethods = paymentMethods.map(m => `'${m.replace(/'/g, "''")}'`).join(',');
+        await supabase.from('payment_methods').delete().eq('room_id', roomId).not('name', 'in', `(${escapedMethods})`);
       } else {
         await supabase.from('payment_methods').delete().eq('room_id', roomId);
       }

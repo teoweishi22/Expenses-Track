@@ -80,11 +80,6 @@ const App: React.FC = () => {
   const syncToCloud = useCallback(async (data: any) => {
     setIsSyncing(true);
     try {
-      if (!roomId) {
-        setIsSyncing(false);
-        return;
-      }
-
       const response = await fetch('/api/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -98,7 +93,6 @@ const App: React.FC = () => {
           try {
             errData = await response.json();
           } catch (jsonError) {
-            // Fallback if JSON parsing fails even with correct content-type
             const text = await response.text();
             throw new Error(text || "Sync failed (malformed JSON)");
           }
@@ -111,8 +105,10 @@ const App: React.FC = () => {
       }
       
       setConfigRequired(false);
+      setIsDirty(false); // Only clear dirty flag on success
     } catch (e: any) {
       console.error("Sync Error:", e.message);
+      // We don't clear isDirty here so it can retry
     } finally {
       setTimeout(() => setIsSyncing(false), 1000);
     }
@@ -242,8 +238,7 @@ const App: React.FC = () => {
     const timeoutId = setTimeout(() => {
       console.log("Syncing to cloud...", data);
       syncToCloud({ ...data, roomId });
-      setIsDirty(false);
-    }, 300); // Reduced timeout for faster sync
+    }, 300); 
     
     return () => clearTimeout(timeoutId);
   }, [expenses, people, categories, paymentMethods, hasInitialLoaded, isDirty, syncToCloud, roomId]);
@@ -338,13 +333,10 @@ const App: React.FC = () => {
 
   const handleDeleteCategory = (cat: string) => {
     if (categories.length <= 1) {
-      alert("You must have at least one category.");
       return;
     }
-    if (confirm(`Delete category "${cat}"?`)) {
-      setCategories(prev => prev.filter(c => c !== cat));
-      triggerSync();
-    }
+    setCategories(prev => prev.filter(c => c !== cat));
+    triggerSync();
   };
 
   const handleAddPaymentMethod = () => {
@@ -357,13 +349,10 @@ const App: React.FC = () => {
 
   const handleDeletePaymentMethod = (method: string) => {
     if (paymentMethods.length <= 1) {
-      alert("You must have at least one payment method.");
       return;
     }
-    if (confirm(`Delete payment method "${method}"?`)) {
-      setPaymentMethods(prev => prev.filter(m => m !== method));
-      triggerSync();
-    }
+    setPaymentMethods(prev => prev.filter(m => m !== method));
+    triggerSync();
   };
 
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
