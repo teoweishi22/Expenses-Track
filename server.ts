@@ -10,15 +10,18 @@ const PORT = 3000;
 app.use(express.json({ limit: '50mb' }));
 
 // Initialize Supabase client
-const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY || process.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
+const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
 
 console.log("--- Supabase Diagnostics ---");
 console.log("URL detected:", !!supabaseUrl);
-console.log("Key detected:", !!supabaseServiceKey);
+console.log("Service Key detected:", !!supabaseServiceKey);
+console.log("Anon Key detected:", !!supabaseAnonKey);
 console.log("Environment Keys found:", Object.keys(process.env).filter(k => k.includes('SUPABASE')));
+
 if (!supabaseUrl || !supabaseServiceKey) {
-  console.log("Missing variables. Please set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in AI Studio.");
+  console.log("CRITICAL: Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY.");
 }
 console.log("----------------------------");
 
@@ -27,21 +30,25 @@ const supabase = (supabaseUrl && supabaseServiceKey)
   : null;
 
 if (supabase) {
-  console.log("✅ Supabase client initialized successfully.");
+  console.log("✅ Supabase client initialized with Service Role Key.");
 } else {
-  console.error("❌ Supabase client failed to initialize. Please ensure SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are set in your environment variables.");
+  console.error("❌ Supabase client failed to initialize.");
 }
 
 // API Routes
 app.get("/api/health", (req, res) => {
-  res.json({ status: "ok", supabaseConnected: !!supabase });
+  res.json({ 
+    status: "ok", 
+    supabaseConnected: !!supabase,
+    urlConfigured: !!supabaseUrl,
+    keyConfigured: !!supabaseServiceKey
+  });
 });
 
 app.get("/api/config", (req, res) => {
-  const anonKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   res.json({ 
     supabaseUrl: supabaseUrl || null, 
-    supabaseAnonKey: anonKey || null 
+    supabaseAnonKey: supabaseAnonKey || null 
   });
 });
 

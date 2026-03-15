@@ -41,6 +41,7 @@ const App: React.FC = () => {
   const [isInitialized, setIsInitialized] = useState(false);
   const [hasInitialLoaded, setHasInitialLoaded] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
+  const [isSupabaseConnected, setIsSupabaseConnected] = useState<boolean | null>(null);
   const roomId = 'private';
   
   const triggerSync = () => {
@@ -118,9 +119,13 @@ const App: React.FC = () => {
   }, [roomId]);
 
   const loadFromCloud = useCallback(async () => {
-    if (!roomId) return; // Don't fetch if no room
+    if (!roomId) return; 
 
     try {
+      const healthRes = await fetch('/api/health');
+      const health = await healthRes.json();
+      setIsSupabaseConnected(health.supabaseConnected);
+
       const response = await fetch(`/api/data?roomId=${roomId}`, {
         headers: { 'x-room-id': roomId }
       });
@@ -172,11 +177,13 @@ const App: React.FC = () => {
         const text = await response.text();
         if (!response.ok) throw new Error(text || "Load failed (non-JSON response)");
         console.warn("Received non-JSON response from /api/data:", text);
+        // Don't set hasInitialLoaded to true if we didn't get a valid response
       }
     } catch (e: any) {
       console.error("Load Error:", e.message);
-      setIsInitialized(true);
-      setHasInitialLoaded(true);
+      // Critical: If load fails, we don't set hasInitialLoaded to true 
+      // to prevent overwriting cloud data with empty local state
+      setIsInitialized(true); 
     }
   }, [roomId]);
 
@@ -236,10 +243,22 @@ const App: React.FC = () => {
       console.log("Syncing to cloud...", data);
       syncToCloud({ ...data, roomId });
       setIsDirty(false);
-    }, 1000); 
+    }, 300); // Reduced timeout for faster sync
     
     return () => clearTimeout(timeoutId);
   }, [expenses, people, categories, paymentMethods, hasInitialLoaded, isDirty, syncToCloud, roomId]);
+
+  // Warn about unsaved changes
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (isDirty) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [isDirty]);
 
   const fetchInsights = useCallback(async () => {
     if (expenses.length > 0) {
@@ -608,12 +627,32 @@ const App: React.FC = () => {
                 Cloud sync is currently disabled. To enable it, please add your Supabase credentials to the <strong>AI Studio Environment Variables</strong>:
               </p>
               <div className="bg-white/50 p-3 rounded-xl border border-amber-100 font-mono text-xs space-y-1">
-                <p>SUPABASE_URL=https://eefjyoxdkunltjrnwqko.supabase.co</p>
-                <p>SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...</p>
+                <p>SUPABASE_URL=your-project-url</p>
+                <p>SUPABASE_SERVICE_ROLE_KEY=your-service-role-key</p>
               </div>
               <p className="text-[10px] text-amber-600 italic">The app will automatically reconnect once these variables are set.</p>
             </div>
           </div>
+        </div>
+      )}
+
+      {isSupabaseConnected === false && !configRequired && (
+        <div className="mb-6 p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-center gap-3 text-rose-800 text-sm">
+          <div className="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></div>
+          <span>Database connection failed. Changes will not be saved. Please check your Supabase credentials.</span>
+        </div>
+      )}
+
+      {isSyncing && (
+        <div className="fixed top-4 right-4 z-50 bg-indigo-600 text-white px-4 py-2 rounded-full text-xs font-bold shadow-lg flex items-center gap-2 animate-in fade-in zoom-in duration-300">
+          <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+          Saving to Cloud...
+        </div>
+      )}
+
+      {isDirty && !isSyncing && (
+        <div className="fixed top-4 right-4 z-50 bg-amber-500 text-white px-4 py-2 rounded-full text-xs font-bold shadow-lg animate-in fade-in zoom-in duration-300">
+          Unsaved Changes
         </div>
       )}
       <input 
