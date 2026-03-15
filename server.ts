@@ -37,6 +37,14 @@ app.get("/api/health", (req, res) => {
   res.json({ status: "ok", supabaseConnected: !!supabase });
 });
 
+app.get("/api/config", (req, res) => {
+  const anonKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  res.json({ 
+    supabaseUrl: supabaseUrl || null, 
+    supabaseAnonKey: anonKey || null 
+  });
+});
+
 // Get all data (expenses, people, categories, paymentMethods)
 app.get("/api/data", async (req, res) => {
   if (!supabase) {
@@ -44,11 +52,16 @@ app.get("/api/data", async (req, res) => {
     return res.status(500).json({ error: "Supabase not configured" });
   }
 
+  const roomId = req.query.roomId || req.headers['x-room-id'];
+  if (!roomId) {
+    return res.status(400).json({ error: "roomId is required" });
+  }
+
   try {
-    const { data: expenses, error: expError } = await supabase.from('expenses').select('*');
-    const { data: people, error: pError } = await supabase.from('people').select('*');
-    const { data: categories, error: cError } = await supabase.from('categories').select('*');
-    const { data: methods, error: mError } = await supabase.from('payment_methods').select('*');
+    const { data: expenses, error: expError } = await supabase.from('expenses').select('*').eq('room_id', roomId);
+    const { data: people, error: pError } = await supabase.from('people').select('*').eq('room_id', roomId);
+    const { data: categories, error: cError } = await supabase.from('categories').select('*').eq('room_id', roomId);
+    const { data: methods, error: mError } = await supabase.from('payment_methods').select('*').eq('room_id', roomId);
 
     if (expError || pError || cError || mError) {
       console.error("Supabase Fetch Error:", { expError, pError, cError, mError });
@@ -62,14 +75,15 @@ app.get("/api/data", async (req, res) => {
       paymentMethod: exp.payment_method,
       // Remove database-only fields to keep frontend clean if necessary
       payer_id: undefined,
-      payment_method: undefined
+      payment_method: undefined,
+      room_id: undefined
     }));
 
     res.json({ 
       expenses: mappedExpenses, 
-      people, 
-      categories: categories.map(c => c.name), 
-      paymentMethods: methods.map(m => m.name) 
+      people: (people || []).map(p => ({ ...p, room_id: undefined })), 
+      categories: (categories || []).map(c => c.name), 
+      paymentMethods: (methods || []).map(m => m.name) 
     });
   } catch (error: any) {
     console.error("API Data Error:", error);
@@ -111,23 +125,27 @@ app.post("/api/sync", async (req, res) => {
     return res.status(500).json({ error: "Supabase not configured" });
   }
 
-  const { expenses, people, categories, paymentMethods } = req.body;
+  const { expenses, people, categories, paymentMethods, roomId } = req.body;
+  if (!roomId) {
+    return res.status(400).json({ error: "roomId is required" });
+  }
 
   try {
     if (people) {
       if (people.length > 0) {
-        const { error: pError } = await supabase.from('people').upsert(people);
+        const mappedPeople = people.map((p: any) => ({ ...p, room_id: roomId }));
+        const { error: pError } = await supabase.from('people').upsert(mappedPeople);
         if (pError) throw pError;
         
         const currentIds = people.map((p: any) => p.id);
-        const { data: existing } = await supabase.from('people').select('id');
+        const { data: existing } = await supabase.from('people').select('id').eq('room_id', roomId);
         const existingIds = existing?.map(e => e.id) || [];
         const idsToDelete = existingIds.filter(id => !currentIds.includes(id));
         if (idsToDelete.length > 0) {
-          await supabase.from('people').delete().in('id', idsToDelete);
+          await supabase.from('people').delete().in('id', idsToDelete).eq('room_id', roomId);
         }
       } else {
-        await supabase.from('people').delete().not('id', 'is', null);
+        await supabase.from('people').delete().eq('room_id', roomId);
       }
     }
 
@@ -144,54 +162,55 @@ app.post("/api/sync", async (req, res) => {
           payment_method: exp.paymentMethod,
           remarks: exp.remarks,
           receipt_url: exp.receiptUrl,
-          splits: exp.splits
+          splits: exp.splits,
+          room_id: roomId
         }));
         const { error: expError } = await supabase.from('expenses').upsert(mappedExpenses);
         if (expError) throw expError;
         
         const currentIds = mappedExpenses.map(e => e.id);
-        const { data: existing } = await supabase.from('expenses').select('id');
+        const { data: existing } = await supabase.from('expenses').select('id').eq('room_id', roomId);
         const existingIds = existing?.map(e => e.id) || [];
         const idsToDelete = existingIds.filter(id => !currentIds.includes(id));
         if (idsToDelete.length > 0) {
-          await supabase.from('expenses').delete().in('id', idsToDelete);
+          await supabase.from('expenses').delete().in('id', idsToDelete).eq('room_id', roomId);
         }
       } else {
-        await supabase.from('expenses').delete().not('id', 'is', null);
+        await supabase.from('expenses').delete().eq('room_id', roomId);
       }
     }
 
     if (categories) {
       if (categories.length > 0) {
-        const catData = categories.map((name: string) => ({ name }));
-        const { error: cError } = await supabase.from('categories').upsert(catData, { onConflict: 'name' });
+        const catData = categories.map((name: string) => ({ name, room_id: roomId }));
+        const { error: cError } = await supabase.from('categories').upsert(catData, { onConflict: 'name, room_id' });
         if (cError) throw cError;
         
-        const { data: existing } = await supabase.from('categories').select('name');
+        const { data: existing } = await supabase.from('categories').select('name').eq('room_id', roomId);
         const existingNames = existing?.map(e => e.name) || [];
         const namesToDelete = existingNames.filter(name => !categories.includes(name));
         if (namesToDelete.length > 0) {
-          await supabase.from('categories').delete().in('name', namesToDelete);
+          await supabase.from('categories').delete().in('name', namesToDelete).eq('room_id', roomId);
         }
       } else {
-        await supabase.from('categories').delete().not('name', 'is', null);
+        await supabase.from('categories').delete().eq('room_id', roomId);
       }
     }
 
     if (paymentMethods) {
       if (paymentMethods.length > 0) {
-        const methodData = paymentMethods.map((name: string) => ({ name }));
-        const { error: mError } = await supabase.from('payment_methods').upsert(methodData, { onConflict: 'name' });
+        const methodData = paymentMethods.map((name: string) => ({ name, room_id: roomId }));
+        const { error: mError } = await supabase.from('payment_methods').upsert(methodData, { onConflict: 'name, room_id' });
         if (mError) throw mError;
         
-        const { data: existing } = await supabase.from('payment_methods').select('name');
+        const { data: existing } = await supabase.from('payment_methods').select('name').eq('room_id', roomId);
         const existingNames = existing?.map(e => e.name) || [];
         const namesToDelete = existingNames.filter(name => !paymentMethods.includes(name));
         if (namesToDelete.length > 0) {
-          await supabase.from('payment_methods').delete().in('name', namesToDelete);
+          await supabase.from('payment_methods').delete().in('name', namesToDelete).eq('room_id', roomId);
         }
       } else {
-        await supabase.from('payment_methods').delete().not('name', 'is', null);
+        await supabase.from('payment_methods').delete().eq('room_id', roomId);
       }
     }
 

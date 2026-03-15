@@ -11,6 +11,7 @@ import Notes from './components/Notes';
 import { Expense, Person, Balance } from './types';
 import { getFinancialInsights } from './services/geminiService';
 import { CATEGORIES as INITIAL_CATEGORIES } from './constants';
+import { createClient } from '@supabase/supabase-js';
 
 const INITIAL_PEOPLE: Person[] = [
   { id: 'me', name: 'You', avatar: 'https://picsum.photos/seed/me/100' },
@@ -20,7 +21,6 @@ const INITIAL_PEOPLE: Person[] = [
 
 const INITIAL_PAYMENT_METHODS = ['Cash', 'eWallet', 'Credit Card'];
 const CURRENCY = 'RM';
-const SYNC_INTERVAL = 60000; // Poll every 60 seconds for sync
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'expenses' | 'people' | 'notes'>('dashboard');
@@ -38,6 +38,7 @@ const App: React.FC = () => {
   const [isSyncing, setIsSyncing] = useState(false);
   const [zoomedReceipt, setZoomedReceipt] = useState<string | null>(null);
   const [configRequired, setConfigRequired] = useState(false);
+  const [isInitialized, setIsInitialized] = useState(false);
   
   // Ref to track if update is from remote to prevent sync loops
   const isRemoteUpdate = useRef(false);
@@ -112,8 +113,13 @@ const App: React.FC = () => {
   }, []);
 
   const loadFromCloud = useCallback(async () => {
+    const roomId = getRoomId();
+    if (!roomId) return; // Don't fetch if no room
+
     try {
-      const response = await fetch('/api/data');
+      const response = await fetch(`/api/data?roomId=${roomId}`, {
+        headers: { 'x-room-id': roomId }
+      });
       
       const contentType = response.headers.get("content-type");
       if (contentType && contentType.indexOf("application/json") !== -1) {
@@ -158,6 +164,8 @@ const App: React.FC = () => {
           isRemoteUpdate.current = false;
         }
         
+        setIsInitialized(true);
+        
         // Reset flag after state updates are processed
         setTimeout(() => {
           isRemoteUpdate.current = false;
@@ -169,6 +177,7 @@ const App: React.FC = () => {
       }
     } catch (e: any) {
       console.error("Load Error:", e.message);
+      setIsInitialized(true);
     }
   }, []);
 
@@ -184,11 +193,49 @@ const App: React.FC = () => {
 
     loadFromCloud();
 
-    const interval = setInterval(() => {
-      loadFromCloud();
-    }, SYNC_INTERVAL);
+    const roomId = getRoomId();
+    if (!roomId) return;
 
-    return () => clearInterval(interval);
+    let channel: any;
+    let supabase: any;
+
+    const setupRealtime = async () => {
+      try {
+        const res = await fetch('/api/config');
+        const config = await res.json();
+        
+        if (config.supabaseUrl && config.supabaseAnonKey) {
+          supabase = createClient(config.supabaseUrl, config.supabaseAnonKey);
+          
+          channel = supabase
+            .channel('db-changes')
+            .on(
+              'postgres_changes',
+              { 
+                event: '*', 
+                schema: 'public', 
+                filter: `room_id=eq.${roomId}` // Only listen to changes for THIS room
+              },
+              (payload: any) => {
+                console.log('Change received!', payload);
+                // When ANY change happens in the DB, pull the fresh state
+                loadFromCloud(); 
+              }
+            )
+            .subscribe();
+        }
+      } catch (e) {
+        console.error("Failed to setup realtime", e);
+      }
+    };
+
+    setupRealtime();
+
+    return () => {
+      if (supabase && channel) {
+        supabase.removeChannel(channel);
+      }
+    };
   }, [loadFromCloud]);
 
   useEffect(() => {
@@ -198,14 +245,17 @@ const App: React.FC = () => {
     localStorage.setItem('categories', JSON.stringify(categories));
     localStorage.setItem('paymentMethods', JSON.stringify(paymentMethods));
     
-    if (isRemoteUpdate.current) return;
+    if (!isInitialized || isRemoteUpdate.current) return;
+
+    const roomId = getRoomId();
+    if (!roomId) return;
 
     const timeoutId = setTimeout(() => {
-      syncToCloud(data);
+      syncToCloud({ ...data, roomId });
     }, 500);
     
     return () => clearTimeout(timeoutId);
-  }, [expenses, people, categories, paymentMethods, syncToCloud]);
+  }, [expenses, people, categories, paymentMethods, syncToCloud, isInitialized]);
 
   const fetchInsights = useCallback(async () => {
     if (expenses.length > 0) {
