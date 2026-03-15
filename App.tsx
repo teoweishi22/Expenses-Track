@@ -79,10 +79,16 @@ const App: React.FC = () => {
     
     setIsSyncing(true);
     try {
+      const roomId = getRoomId();
+      if (!roomId) {
+        setIsSyncing(false);
+        return;
+      }
+
       const response = await fetch('/api/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data)
+        body: JSON.stringify({ ...data, roomId })
       });
       
       const contentType = response.headers.get("content-type");
