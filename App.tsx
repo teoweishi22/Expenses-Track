@@ -141,10 +141,22 @@ const App: React.FC = () => {
         setConfigRequired(false);
         
         isRemoteUpdate.current = true;
-        if (parsed.expenses && parsed.expenses.length > 0) setExpenses(parsed.expenses);
-        if (parsed.people && parsed.people.length > 0) setPeople(parsed.people);
-        if (parsed.categories && parsed.categories.length > 0) setCategories(parsed.categories);
-        if (parsed.paymentMethods && parsed.paymentMethods.length > 0) setPaymentMethods(parsed.paymentMethods);
+        
+        // If the database is completely empty (new user), don't overwrite the initial state
+        const isDbEmpty = (parsed.expenses?.length === 0) && 
+                          (parsed.people?.length === 0) && 
+                          (parsed.categories?.length === 0) && 
+                          (parsed.paymentMethods?.length === 0);
+                          
+        if (!isDbEmpty) {
+          setExpenses(parsed.expenses || []);
+          setPeople(parsed.people || []);
+          setCategories(parsed.categories || []);
+          setPaymentMethods(parsed.paymentMethods || []);
+        } else {
+          // Force a sync of the initial local state to the empty database
+          isRemoteUpdate.current = false;
+        }
         
         // Reset flag after state updates are processed
         setTimeout(() => {
@@ -186,7 +198,13 @@ const App: React.FC = () => {
     localStorage.setItem('categories', JSON.stringify(categories));
     localStorage.setItem('paymentMethods', JSON.stringify(paymentMethods));
     
-    syncToCloud(data);
+    if (isRemoteUpdate.current) return;
+
+    const timeoutId = setTimeout(() => {
+      syncToCloud(data);
+    }, 500);
+    
+    return () => clearTimeout(timeoutId);
   }, [expenses, people, categories, paymentMethods, syncToCloud]);
 
   const fetchInsights = useCallback(async () => {

@@ -114,39 +114,85 @@ app.post("/api/sync", async (req, res) => {
   const { expenses, people, categories, paymentMethods } = req.body;
 
   try {
-    if (people && people.length > 0) {
-      const { error: pError } = await supabase.from('people').upsert(people);
-      if (pError) throw pError;
+    if (people) {
+      if (people.length > 0) {
+        const { error: pError } = await supabase.from('people').upsert(people);
+        if (pError) throw pError;
+        
+        const currentIds = people.map((p: any) => p.id);
+        const { data: existing } = await supabase.from('people').select('id');
+        const existingIds = existing?.map(e => e.id) || [];
+        const idsToDelete = existingIds.filter(id => !currentIds.includes(id));
+        if (idsToDelete.length > 0) {
+          await supabase.from('people').delete().in('id', idsToDelete);
+        }
+      } else {
+        await supabase.from('people').delete().not('id', 'is', null);
+      }
     }
 
-    if (expenses && expenses.length > 0) {
-      // Map frontend fields to database columns
-      const mappedExpenses = expenses.map((exp: any) => ({
-        id: exp.id,
-        description: exp.description,
-        amount: exp.amount,
-        date: exp.date,
-        category: exp.category,
-        payer_id: exp.paidBy,
-        payment_method: exp.paymentMethod,
-        remarks: exp.remarks,
-        receipt_url: exp.receiptUrl,
-        splits: exp.splits
-      }));
-      const { error: expError } = await supabase.from('expenses').upsert(mappedExpenses);
-      if (expError) throw expError;
+    if (expenses) {
+      if (expenses.length > 0) {
+        // Map frontend fields to database columns
+        const mappedExpenses = expenses.map((exp: any) => ({
+          id: exp.id,
+          description: exp.description,
+          amount: exp.amount,
+          date: exp.date,
+          category: exp.category,
+          payer_id: exp.paidBy,
+          payment_method: exp.paymentMethod,
+          remarks: exp.remarks,
+          receipt_url: exp.receiptUrl,
+          splits: exp.splits
+        }));
+        const { error: expError } = await supabase.from('expenses').upsert(mappedExpenses);
+        if (expError) throw expError;
+        
+        const currentIds = mappedExpenses.map(e => e.id);
+        const { data: existing } = await supabase.from('expenses').select('id');
+        const existingIds = existing?.map(e => e.id) || [];
+        const idsToDelete = existingIds.filter(id => !currentIds.includes(id));
+        if (idsToDelete.length > 0) {
+          await supabase.from('expenses').delete().in('id', idsToDelete);
+        }
+      } else {
+        await supabase.from('expenses').delete().not('id', 'is', null);
+      }
     }
 
-    if (categories && categories.length > 0) {
-      const catData = categories.map((name: string) => ({ name }));
-      const { error: cError } = await supabase.from('categories').upsert(catData, { onConflict: 'name' });
-      if (cError) throw cError;
+    if (categories) {
+      if (categories.length > 0) {
+        const catData = categories.map((name: string) => ({ name }));
+        const { error: cError } = await supabase.from('categories').upsert(catData, { onConflict: 'name' });
+        if (cError) throw cError;
+        
+        const { data: existing } = await supabase.from('categories').select('name');
+        const existingNames = existing?.map(e => e.name) || [];
+        const namesToDelete = existingNames.filter(name => !categories.includes(name));
+        if (namesToDelete.length > 0) {
+          await supabase.from('categories').delete().in('name', namesToDelete);
+        }
+      } else {
+        await supabase.from('categories').delete().not('name', 'is', null);
+      }
     }
 
-    if (paymentMethods && paymentMethods.length > 0) {
-      const methodData = paymentMethods.map((name: string) => ({ name }));
-      const { error: mError } = await supabase.from('payment_methods').upsert(methodData, { onConflict: 'name' });
-      if (mError) throw mError;
+    if (paymentMethods) {
+      if (paymentMethods.length > 0) {
+        const methodData = paymentMethods.map((name: string) => ({ name }));
+        const { error: mError } = await supabase.from('payment_methods').upsert(methodData, { onConflict: 'name' });
+        if (mError) throw mError;
+        
+        const { data: existing } = await supabase.from('payment_methods').select('name');
+        const existingNames = existing?.map(e => e.name) || [];
+        const namesToDelete = existingNames.filter(name => !paymentMethods.includes(name));
+        if (namesToDelete.length > 0) {
+          await supabase.from('payment_methods').delete().in('name', namesToDelete);
+        }
+      } else {
+        await supabase.from('payment_methods').delete().not('name', 'is', null);
+      }
     }
 
     res.json({ success: true });
