@@ -52,11 +52,7 @@ app.get("/api/data", async (req, res) => {
     return res.status(500).json({ error: "Supabase not configured" });
   }
 
-  const roomId = req.query.roomId || req.headers['x-room-id'];
-  if (!roomId) {
-    return res.status(400).json({ error: "roomId is required" });
-  }
-
+  const roomId = req.query.roomId || req.headers['x-room-id'] || 'global';
   try {
     const { data: expenses, error: expError } = await supabase.from('expenses').select('*').eq('room_id', roomId);
     const { data: people, error: pError } = await supabase.from('people').select('*').eq('room_id', roomId);
@@ -125,10 +121,8 @@ app.post("/api/sync", async (req, res) => {
     return res.status(500).json({ error: "Supabase not configured" });
   }
 
-  const { expenses, people, categories, paymentMethods, roomId } = req.body;
-  if (!roomId) {
-    return res.status(400).json({ error: "roomId is required" });
-  }
+  const { expenses, people, categories, paymentMethods } = req.body;
+  const roomId = req.body.roomId || 'global';
 
   try {
     if (people) {

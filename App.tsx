@@ -39,33 +39,7 @@ const App: React.FC = () => {
   const [zoomedReceipt, setZoomedReceipt] = useState<string | null>(null);
   const [configRequired, setConfigRequired] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
-  
-  const [roomId, setRoomId] = useState<string>(() => {
-    let hash = window.location.hash.replace('#room=', '');
-    if (hash) {
-      localStorage.setItem('roomId', hash);
-      return hash;
-    }
-    let savedRoomId = localStorage.getItem('roomId');
-    if (!savedRoomId) {
-      savedRoomId = uuidv4().substring(0, 8);
-      localStorage.setItem('roomId', savedRoomId);
-    }
-    window.location.hash = `room=${savedRoomId}`;
-    return savedRoomId;
-  });
-
-  useEffect(() => {
-    const handleHashChange = () => {
-      const hash = window.location.hash.replace('#room=', '');
-      if (hash && hash !== roomId) {
-        localStorage.setItem('roomId', hash);
-        setRoomId(hash);
-      }
-    };
-    window.addEventListener('hashchange', handleHashChange);
-    return () => window.removeEventListener('hashchange', handleHashChange);
-  }, [roomId]);
+  const roomId = 'global';
   
   const isLocalUpdate = useRef(false);
   const triggerSync = () => {
@@ -612,7 +586,7 @@ const App: React.FC = () => {
   }, [people, expenses]);
 
   const generateSyncLink = () => {
-    const link = `${window.location.origin}${window.location.pathname}#room=${roomId}`;
+    const link = window.location.origin + window.location.pathname;
     prompt("Share this link with your group for live updates:", link);
   };
 
@@ -648,18 +622,6 @@ const App: React.FC = () => {
 
       {activeTab === 'dashboard' && (
         <div className="space-y-6 animate-in fade-in duration-500">
-          <div className="flex justify-between items-center bg-white px-6 py-3 rounded-2xl border border-slate-100 shadow-sm">
-             <div className="flex items-center gap-2">
-                <div className={`w-2 h-2 rounded-full ${roomId ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`}></div>
-                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
-                  {roomId ? `Sync Active: Room ${roomId}` : 'Offline Mode (Local Only)'}
-                </span>
-             </div>
-             {!roomId && (
-               <button onClick={generateSyncLink} className="text-[10px] font-bold text-indigo-600 hover:underline">Enable Cloud Sync</button>
-             )}
-          </div>
-
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="bg-indigo-600 p-6 rounded-3xl shadow-xl shadow-indigo-100 text-white relative overflow-hidden group">
               <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform">
