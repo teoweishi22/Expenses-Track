@@ -39,7 +39,8 @@ const App: React.FC = () => {
   const [zoomedReceipt, setZoomedReceipt] = useState<string | null>(null);
   const [configRequired, setConfigRequired] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
-  const roomId = 'global';
+  const [hasInitialLoaded, setHasInitialLoaded] = useState(false);
+  const roomId = 'private';
   
   const isLocalUpdate = useRef(false);
   const triggerSync = () => {
@@ -166,6 +167,7 @@ const App: React.FC = () => {
         }
         
         setIsInitialized(true);
+        setHasInitialLoaded(true);
       } else {
         const text = await response.text();
         if (!response.ok) throw new Error(text || "Load failed (non-JSON response)");
@@ -174,6 +176,7 @@ const App: React.FC = () => {
     } catch (e: any) {
       console.error("Load Error:", e.message);
       setIsInitialized(true);
+      setHasInitialLoaded(true);
     }
   }, [roomId]);
 
@@ -225,14 +228,18 @@ const App: React.FC = () => {
   }, [loadFromCloud, roomId]);
 
   useEffect(() => {
-    if (!isLocalUpdate.current) return;
+    if (!hasInitialLoaded || !isLocalUpdate.current) return;
 
     const data = { expenses, people, categories, paymentMethods };
     if (!roomId) return;
 
-    syncToCloud({ ...data, roomId });
-    isLocalUpdate.current = false;
-  }, [expenses, people, categories, paymentMethods, isInitialized, syncToCloud, roomId]);
+    const timeoutId = setTimeout(() => {
+      syncToCloud({ ...data, roomId });
+      isLocalUpdate.current = false;
+    }, 1000); // Increased to 1s for safety
+    
+    return () => clearTimeout(timeoutId);
+  }, [expenses, people, categories, paymentMethods, hasInitialLoaded, syncToCloud, roomId]);
 
   const fetchInsights = useCallback(async () => {
     if (expenses.length > 0) {

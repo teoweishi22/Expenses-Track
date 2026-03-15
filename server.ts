@@ -52,7 +52,7 @@ app.get("/api/data", async (req, res) => {
     return res.status(500).json({ error: "Supabase not configured" });
   }
 
-  const roomId = req.query.roomId || req.headers['x-room-id'] || 'global';
+  const roomId = 'private'; // Hardcoded for private use
   try {
     const { data: expenses, error: expError } = await supabase.from('expenses').select('*').eq('room_id', roomId);
     const { data: people, error: pError } = await supabase.from('people').select('*').eq('room_id', roomId);
@@ -122,7 +122,7 @@ app.post("/api/sync", async (req, res) => {
   }
 
   const { expenses, people, categories, paymentMethods } = req.body;
-  const roomId = req.body.roomId || 'global';
+  const roomId = 'private'; // Hardcoded for private use
 
   try {
     if (people) {
