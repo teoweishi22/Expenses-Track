@@ -124,6 +124,9 @@ app.post("/api/sync", async (req, res) => {
   const { expenses, people, categories, paymentMethods } = req.body;
   const roomId = 'private'; // Hardcoded for private use
 
+  console.log(`--- Syncing Data for Room: ${roomId} ---`);
+  console.log(`Expenses: ${expenses?.length || 0}, People: ${people?.length || 0}`);
+
   try {
     if (people) {
       if (people.length > 0) {
@@ -177,8 +180,13 @@ app.post("/api/sync", async (req, res) => {
     if (categories) {
       if (categories.length > 0) {
         const catData = categories.map((name: string) => ({ name, room_id: roomId }));
-        const { error: cError } = await supabase.from('categories').upsert(catData, { onConflict: 'name, room_id' });
-        if (cError) throw cError;
+        // Try to upsert with name as conflict target first, as it's the most common constraint
+        const { error: cError } = await supabase.from('categories').upsert(catData, { onConflict: 'name' });
+        if (cError) {
+          console.warn("Upsert categories with 'name' failed, trying 'name, room_id'", cError.message);
+          const { error: cError2 } = await supabase.from('categories').upsert(catData, { onConflict: 'name, room_id' });
+          if (cError2) throw cError2;
+        }
         
         const { data: existing } = await supabase.from('categories').select('name').eq('room_id', roomId);
         const existingNames = existing?.map(e => e.name) || [];
@@ -194,8 +202,12 @@ app.post("/api/sync", async (req, res) => {
     if (paymentMethods) {
       if (paymentMethods.length > 0) {
         const methodData = paymentMethods.map((name: string) => ({ name, room_id: roomId }));
-        const { error: mError } = await supabase.from('payment_methods').upsert(methodData, { onConflict: 'name, room_id' });
-        if (mError) throw mError;
+        const { error: mError } = await supabase.from('payment_methods').upsert(methodData, { onConflict: 'name' });
+        if (mError) {
+          console.warn("Upsert payment_methods with 'name' failed, trying 'name, room_id'", mError.message);
+          const { error: mError2 } = await supabase.from('payment_methods').upsert(methodData, { onConflict: 'name, room_id' });
+          if (mError2) throw mError2;
+        }
         
         const { data: existing } = await supabase.from('payment_methods').select('name').eq('room_id', roomId);
         const existingNames = existing?.map(e => e.name) || [];

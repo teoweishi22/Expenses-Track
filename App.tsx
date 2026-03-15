@@ -40,11 +40,11 @@ const App: React.FC = () => {
   const [configRequired, setConfigRequired] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
   const [hasInitialLoaded, setHasInitialLoaded] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
   const roomId = 'private';
   
-  const isLocalUpdate = useRef(false);
   const triggerSync = () => {
-    isLocalUpdate.current = true;
+    setIsDirty(true);
   };
   
   // Export Date Range State
@@ -228,18 +228,18 @@ const App: React.FC = () => {
   }, [loadFromCloud, roomId]);
 
   useEffect(() => {
-    if (!hasInitialLoaded || !isLocalUpdate.current) return;
+    if (!hasInitialLoaded || !isDirty) return;
 
     const data = { expenses, people, categories, paymentMethods };
-    if (!roomId) return;
-
+    
     const timeoutId = setTimeout(() => {
+      console.log("Syncing to cloud...", data);
       syncToCloud({ ...data, roomId });
-      isLocalUpdate.current = false;
-    }, 1000); // Increased to 1s for safety
+      setIsDirty(false);
+    }, 1000); 
     
     return () => clearTimeout(timeoutId);
-  }, [expenses, people, categories, paymentMethods, hasInitialLoaded, syncToCloud, roomId]);
+  }, [expenses, people, categories, paymentMethods, hasInitialLoaded, isDirty, syncToCloud, roomId]);
 
   const fetchInsights = useCallback(async () => {
     if (expenses.length > 0) {
@@ -293,13 +293,10 @@ const App: React.FC = () => {
 
   const handleDeletePerson = (id: string) => {
     if (id === 'me') {
-      alert("You cannot delete yourself!");
       return;
     }
-    if (confirm("Are you sure? This will remove this person from the list. History involving them will remain.")) {
-      setPeople(prev => prev.filter(p => p.id !== id));
-      triggerSync();
-    }
+    setPeople(prev => prev.filter(p => p.id !== id));
+    triggerSync();
   };
 
   const handleAddCategory = () => {
