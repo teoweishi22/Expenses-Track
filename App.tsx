@@ -7,7 +7,6 @@ import { compressImage } from './src/utils/image';
 import Layout from './components/Layout';
 import ExpenseForm from './components/ExpenseForm';
 import Charts from './components/Charts';
-import Notes from './components/Notes';
 import { Expense, Person, Balance } from './types';
 import { getFinancialInsights } from './services/geminiService';
 import { CATEGORIES as INITIAL_CATEGORIES } from './constants';
@@ -23,7 +22,7 @@ const INITIAL_PAYMENT_METHODS = ['Cash', 'eWallet', 'Credit Card'];
 const CURRENCY = 'RM';
 
 const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'expenses' | 'people' | 'notes'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'expenses' | 'people'>('dashboard');
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [people, setPeople] = useState<Person[]>(INITIAL_PEOPLE);
   const [categories, setCategories] = useState<string[]>(INITIAL_CATEGORIES);
@@ -303,6 +302,13 @@ const App: React.FC = () => {
     setPeople(prev => prev.map(p => p.id === id ? { ...p, ...updates } : p));
     setEditingPerson(null);
     triggerSync();
+  };
+
+  const handleRenamePerson = (person: Person) => {
+    const newName = prompt("Rename person:", person.name);
+    if (newName && newName !== person.name) {
+      handleUpdatePerson(person.id, { name: newName });
+    }
   };
 
   const handleDeletePerson = (id: string) => {
@@ -859,7 +865,19 @@ const App: React.FC = () => {
                           </button>
                         </div>
                         <div>
-                          <h4 className="text-lg font-bold text-slate-900">{person.name} {person.id === 'me' ? '(You)' : ''}</h4>
+                          <div className="flex items-center gap-2">
+                            <h4 className="text-lg font-bold text-slate-900">{person.name} {person.id === 'me' ? '(You)' : ''}</h4>
+                            {person.id !== 'me' && (
+                              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                                <button onClick={() => handleRenamePerson(person)} className="text-slate-300 hover:text-indigo-500 transition-all p-1">
+                                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                                </button>
+                                <button onClick={() => handleDeletePerson(person.id)} className="text-slate-300 hover:text-rose-500 transition-all p-1">
+                                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                                </button>
+                              </div>
+                            )}
+                          </div>
                           <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Total Share: {CURRENCY} {balance?.totalSpent.toFixed(2)}</p>
                         </div>
                       </div>
@@ -933,10 +951,6 @@ const App: React.FC = () => {
             </div>
           </div>
         </div>
-      )}
-
-      {activeTab === 'notes' && (
-        <Notes />
       )}
 
       {isAddingExpense && (
