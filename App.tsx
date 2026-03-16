@@ -119,8 +119,11 @@ const App: React.FC = () => {
 
   const loadFromCloud = useCallback(async () => {
     if (!roomId) return; 
+    setIsSyncing(true);
+    setSyncError(null);
 
     try {
+      console.log("Loading data from cloud...");
       const healthRes = await fetch('/api/health');
       const health = await healthRes.json();
       setIsSupabaseConnected(health.supabaseConnected);
@@ -152,21 +155,24 @@ const App: React.FC = () => {
            throw new Error("Load failed (malformed JSON)");
         }
         
+        console.log("Data loaded successfully:", parsed);
         setConfigRequired(false);
         
         // If the database is completely empty (new user), don't overwrite the initial state
-        const isDbEmpty = (parsed.expenses?.length === 0) && 
-                          (parsed.people?.length === 0) && 
-                          (parsed.categories?.length === 0) && 
-                          (parsed.paymentMethods?.length === 0);
-                          
+        const isDbEmpty = (!parsed.expenses || parsed.expenses.length === 0) && 
+                          (!parsed.people || parsed.people.length === 0) && 
+                          (!parsed.categories || parsed.categories.length === 0) && 
+                          (!parsed.paymentMethods || parsed.paymentMethods.length === 0);
+                           
         if (!isDbEmpty) {
           setExpenses(parsed.expenses || []);
           setPeople(parsed.people || []);
           setCategories(parsed.categories || []);
           setPaymentMethods(parsed.paymentMethods || []);
+          setIsDirty(false); // Clear dirty flag after successful load
+          setSyncError(null);
         } else {
-          // Force a sync of the initial local state to the empty database
+          console.log("Database is empty, triggering initial sync...");
           triggerSync();
         }
         
@@ -176,13 +182,13 @@ const App: React.FC = () => {
         const text = await response.text();
         if (!response.ok) throw new Error(text || "Load failed (non-JSON response)");
         console.warn("Received non-JSON response from /api/data:", text);
-        // Don't set hasInitialLoaded to true if we didn't get a valid response
       }
     } catch (e: any) {
       console.error("Load Error:", e.message);
-      // Critical: If load fails, we don't set hasInitialLoaded to true 
-      // to prevent overwriting cloud data with empty local state
+      setSyncError(`Load failed: ${e.message}`);
       setIsInitialized(true); 
+    } finally {
+      setTimeout(() => setIsSyncing(false), 500);
     }
   }, [roomId]);
 
@@ -234,7 +240,7 @@ const App: React.FC = () => {
   }, [loadFromCloud, roomId]);
 
   useEffect(() => {
-    if (!hasInitialLoaded || !isDirty) return;
+    if (!isInitialized || !isDirty) return;
 
     const data = { expenses, people, categories, paymentMethods };
     
@@ -244,7 +250,7 @@ const App: React.FC = () => {
     }, 300); 
     
     return () => clearTimeout(timeoutId);
-  }, [expenses, people, categories, paymentMethods, hasInitialLoaded, isDirty, syncToCloud, roomId]);
+  }, [expenses, people, categories, paymentMethods, isInitialized, isDirty, syncToCloud, roomId]);
 
   // Warn about unsaved changes
   useEffect(() => {
@@ -652,9 +658,13 @@ const App: React.FC = () => {
       {syncError && (
         <div className="fixed top-4 right-4 z-50 bg-rose-600 text-white px-4 py-2 rounded-full text-xs font-bold shadow-lg flex items-center gap-2 animate-in fade-in zoom-in duration-300">
           <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-          Sync Error: {syncError}
+          {syncError}
           <button 
-            onClick={() => triggerSync()}
+            onClick={() => {
+              setSyncError(null);
+              if (isDirty) triggerSync();
+              else loadFromCloud();
+            }}
             className="ml-2 bg-white/20 hover:bg-white/30 px-2 py-0.5 rounded-md transition-colors"
           >
             Retry
