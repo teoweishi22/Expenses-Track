@@ -40,6 +40,7 @@ const App: React.FC = () => {
   const [isInitialized, setIsInitialized] = useState(false);
   const [hasInitialLoaded, setHasInitialLoaded] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
   const [isSupabaseConnected, setIsSupabaseConnected] = useState<boolean | null>(null);
   const roomId = 'private';
   
@@ -78,6 +79,7 @@ const App: React.FC = () => {
 
   const syncToCloud = useCallback(async (data: any) => {
     setIsSyncing(true);
+    setSyncError(null);
     try {
       const response = await fetch('/api/sync', {
         method: 'POST',
@@ -105,8 +107,10 @@ const App: React.FC = () => {
       
       setConfigRequired(false);
       setIsDirty(false); // Only clear dirty flag on success
+      setSyncError(null);
     } catch (e: any) {
       console.error("Sync Error:", e.message);
+      setSyncError(e.message);
       // We don't clear isDirty here so it can retry
     } finally {
       setTimeout(() => setIsSyncing(false), 1000);
@@ -609,7 +613,7 @@ const App: React.FC = () => {
   };
 
   return (
-    <Layout activeTab={activeTab} onTabChange={setActiveTab}>
+    <Layout activeTab={activeTab} onTabChange={setActiveTab} onRefresh={loadFromCloud} isSyncing={isSyncing}>
       {configRequired && (
         <div className="mb-6 p-6 bg-amber-50 border border-amber-200 rounded-3xl animate-in fade-in slide-in-from-top duration-500">
           <div className="flex items-start gap-4">
@@ -645,7 +649,20 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {isDirty && !isSyncing && (
+      {syncError && (
+        <div className="fixed top-4 right-4 z-50 bg-rose-600 text-white px-4 py-2 rounded-full text-xs font-bold shadow-lg flex items-center gap-2 animate-in fade-in zoom-in duration-300">
+          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+          Sync Error: {syncError}
+          <button 
+            onClick={() => triggerSync()}
+            className="ml-2 bg-white/20 hover:bg-white/30 px-2 py-0.5 rounded-md transition-colors"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
+      {isDirty && !isSyncing && !syncError && (
         <div className="fixed top-4 right-4 z-50 bg-amber-500 text-white px-4 py-2 rounded-full text-xs font-bold shadow-lg animate-in fade-in zoom-in duration-300">
           Unsaved Changes
         </div>

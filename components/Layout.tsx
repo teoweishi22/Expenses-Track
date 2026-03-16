@@ -5,9 +5,11 @@ interface LayoutProps {
   children: React.ReactNode;
   activeTab: 'dashboard' | 'expenses' | 'people';
   onTabChange: (tab: 'dashboard' | 'expenses' | 'people') => void;
+  onRefresh?: () => void;
+  isSyncing?: boolean;
 }
 
-const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange }) => {
+const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange, onRefresh, isSyncing }) => {
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
       {/* Header */}
@@ -19,6 +21,18 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange }) => 
             </div>
             <h1 className="text-xl font-bold text-slate-900 tracking-tight">SplitWise Pro</h1>
           </div>
+          {onRefresh && (
+            <button 
+              onClick={onRefresh}
+              disabled={isSyncing}
+              className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all disabled:opacity-50"
+              title="Refresh Data"
+            >
+              <svg className={`w-5 h-5 ${isSyncing ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+            </button>
+          )}
         </div>
       </header>
 

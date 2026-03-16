@@ -132,21 +132,31 @@ app.post("/api/sync", async (req, res) => {
 
   try {
     // 1. Sync People
-    if (people) {
-      const mappedPeople = people.map((p: any) => ({ ...p, room_id: roomId }));
+    if (people && Array.isArray(people)) {
+      const mappedPeople = people.map((p: any) => ({
+        id: p.id,
+        name: p.name,
+        avatar: p.avatar,
+        room_id: roomId
+      }));
+      
       if (mappedPeople.length > 0) {
         const { error: pError } = await supabase.from('people').upsert(mappedPeople);
-        if (pError) throw pError;
+        if (pError) {
+          console.error("People Upsert Error:", pError);
+          throw new Error(`People Sync Failed: ${pError.message}`);
+        }
         
         const currentIds = mappedPeople.map(p => p.id);
-        await supabase.from('people').delete().eq('room_id', roomId).not('id', 'in', `(${currentIds.join(',')})`);
+        const { error: delError } = await supabase.from('people').delete().eq('room_id', roomId).not('id', 'in', `(${currentIds.join(',')})`);
+        if (delError) console.warn("People Cleanup Warning:", delError.message);
       } else {
         await supabase.from('people').delete().eq('room_id', roomId);
       }
     }
 
     // 2. Sync Expenses
-    if (expenses) {
+    if (expenses && Array.isArray(expenses)) {
       const mappedExpenses = expenses.map((exp: any) => ({
         id: exp.id,
         description: exp.description,
@@ -163,56 +173,55 @@ app.post("/api/sync", async (req, res) => {
 
       if (mappedExpenses.length > 0) {
         const { error: expError } = await supabase.from('expenses').upsert(mappedExpenses);
-        if (expError) throw expError;
+        if (expError) {
+          console.error("Expenses Upsert Error:", expError);
+          throw new Error(`Expenses Sync Failed: ${expError.message}`);
+        }
         
         const currentIds = mappedExpenses.map(e => e.id);
-        await supabase.from('expenses').delete().eq('room_id', roomId).not('id', 'in', `(${currentIds.join(',')})`);
+        const { error: delError } = await supabase.from('expenses').delete().eq('room_id', roomId).not('id', 'in', `(${currentIds.join(',')})`);
+        if (delError) console.warn("Expenses Cleanup Warning:", delError.message);
       } else {
         await supabase.from('expenses').delete().eq('room_id', roomId);
       }
     }
 
     // 3. Sync Categories
-    if (categories) {
+    if (categories && Array.isArray(categories)) {
       const catData = categories.map((name: string) => ({ name, room_id: roomId }));
       if (catData.length > 0) {
-        const { error: cError } = await supabase.from('categories').upsert(catData, { onConflict: 'name' });
+        const { error: cError } = await supabase.from('categories').upsert(catData, { onConflict: 'name, room_id' });
         if (cError) {
-          console.warn("Upsert categories with 'name' failed, trying 'name, room_id'", cError.message);
-          const { error: cError2 } = await supabase.from('categories').upsert(catData, { onConflict: 'name, room_id' });
-          if (cError2) {
-            console.warn("Upsert categories failed, falling back to delete/insert");
-            await supabase.from('categories').delete().eq('room_id', roomId);
-            const { error: cError3 } = await supabase.from('categories').insert(catData);
-            if (cError3) throw cError3;
-          }
+          console.warn("Category Upsert Error:", cError.message);
+          // Fallback to delete and re-insert if upsert fails
+          await supabase.from('categories').delete().eq('room_id', roomId);
+          const { error: cError2 } = await supabase.from('categories').insert(catData);
+          if (cError2) throw new Error(`Category Sync Failed: ${cError2.message}`);
         }
         
         const escapedNames = categories.map(c => `'${c.replace(/'/g, "''")}'`).join(',');
-        await supabase.from('categories').delete().eq('room_id', roomId).not('name', 'in', `(${escapedNames})`);
+        const { error: delError } = await supabase.from('categories').delete().eq('room_id', roomId).not('name', 'in', `(${escapedNames})`);
+        if (delError) console.warn("Categories Cleanup Warning:", delError.message);
       } else {
         await supabase.from('categories').delete().eq('room_id', roomId);
       }
     }
 
     // 4. Sync Payment Methods
-    if (paymentMethods) {
+    if (paymentMethods && Array.isArray(paymentMethods)) {
       const methodData = paymentMethods.map((name: string) => ({ name, room_id: roomId }));
       if (methodData.length > 0) {
-        const { error: mError } = await supabase.from('payment_methods').upsert(methodData, { onConflict: 'name' });
+        const { error: mError } = await supabase.from('payment_methods').upsert(methodData, { onConflict: 'name, room_id' });
         if (mError) {
-          console.warn("Upsert methods with 'name' failed, trying 'name, room_id'", mError.message);
-          const { error: mError2 } = await supabase.from('payment_methods').upsert(methodData, { onConflict: 'name, room_id' });
-          if (mError2) {
-            console.warn("Upsert methods failed, falling back to delete/insert");
-            await supabase.from('payment_methods').delete().eq('room_id', roomId);
-            const { error: mError3 } = await supabase.from('payment_methods').insert(methodData);
-            if (mError3) throw mError3;
-          }
+          console.warn("Payment Method Upsert Error:", mError.message);
+          await supabase.from('payment_methods').delete().eq('room_id', roomId);
+          const { error: mError2 } = await supabase.from('payment_methods').insert(methodData);
+          if (mError2) throw new Error(`Payment Method Sync Failed: ${mError2.message}`);
         }
         
         const escapedMethods = paymentMethods.map(m => `'${m.replace(/'/g, "''")}'`).join(',');
-        await supabase.from('payment_methods').delete().eq('room_id', roomId).not('name', 'in', `(${escapedMethods})`);
+        const { error: delError } = await supabase.from('payment_methods').delete().eq('room_id', roomId).not('name', 'in', `(${escapedMethods})`);
+        if (delError) console.warn("Payment Methods Cleanup Warning:", delError.message);
       } else {
         await supabase.from('payment_methods').delete().eq('room_id', roomId);
       }
