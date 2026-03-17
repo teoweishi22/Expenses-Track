@@ -80,12 +80,19 @@ const App: React.FC = () => {
   const syncToCloud = useCallback(async (data: any) => {
     setIsSyncing(true);
     setSyncError(null);
+    
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout
+
     try {
       const response = await fetch('/api/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...data, roomId })
+        body: JSON.stringify({ ...data, roomId }),
+        signal: controller.signal
       });
+      
+      clearTimeout(timeoutId);
       
       const contentType = response.headers.get("content-type");
       if (contentType && contentType.indexOf("application/json") !== -1) {
@@ -109,8 +116,9 @@ const App: React.FC = () => {
       setIsDirty(false); // Only clear dirty flag on success
       setSyncError(null);
     } catch (e: any) {
+      clearTimeout(timeoutId);
       console.error("Sync Error:", e.message);
-      setSyncError(e.message);
+      setSyncError(e.name === 'AbortError' ? 'Sync timed out' : e.message);
       // We don't clear isDirty here so it can retry
     } finally {
       setTimeout(() => setIsSyncing(false), 1000);
@@ -122,15 +130,21 @@ const App: React.FC = () => {
     setIsSyncing(true);
     setSyncError(null);
 
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout
+
     try {
       console.log("Loading data from cloud...");
-      const healthRes = await fetch('/api/health');
+      const healthRes = await fetch('/api/health', { signal: controller.signal });
       const health = await healthRes.json();
       setIsSupabaseConnected(health.supabaseConnected);
 
       const response = await fetch(`/api/data?roomId=${roomId}`, {
-        headers: { 'x-room-id': roomId }
+        headers: { 'x-room-id': roomId },
+        signal: controller.signal
       });
+      
+      clearTimeout(timeoutId);
       
       const contentType = response.headers.get("content-type");
       if (contentType && contentType.indexOf("application/json") !== -1) {
@@ -184,8 +198,9 @@ const App: React.FC = () => {
         console.warn("Received non-JSON response from /api/data:", text);
       }
     } catch (e: any) {
+      clearTimeout(timeoutId);
       console.error("Load Error:", e.message);
-      setSyncError(`Load failed: ${e.message}`);
+      setSyncError(`Load failed: ${e.name === 'AbortError' ? 'Connection timed out' : e.message}`);
       setIsInitialized(true); 
     } finally {
       setTimeout(() => setIsSyncing(false), 500);
