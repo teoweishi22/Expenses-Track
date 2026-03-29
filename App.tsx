@@ -259,21 +259,13 @@ const App: React.FC = () => {
         if (config.supabaseUrl && config.supabaseAnonKey) {
           supabase = createClient(config.supabaseUrl, config.supabaseAnonKey);
           
+          // FIX: Explicitly target tables for Realtime to bypass the filter crash
           channel = supabase
             .channel('db-changes')
-            .on(
-              'postgres_changes',
-              { 
-                event: '*', 
-                schema: 'public', 
-                filter: `room_id=eq.${roomId}` // Only listen to changes for THIS room
-              },
-              (payload: any) => {
-                console.log('Change received!', payload);
-                // When ANY change happens in the DB, pull the fresh state
-                loadFromCloud(); 
-              }
-            )
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'expenses' }, () => loadFromCloud())
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'people' }, () => loadFromCloud())
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'categories' }, () => loadFromCloud())
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'payment_methods' }, () => loadFromCloud())
             .subscribe();
         }
       } catch (e) {
