@@ -115,8 +115,9 @@ const App: React.FC = () => {
       setSyncError(null);
     } catch (e: any) {
       console.error("Sync Error:", e.message);
-      setSyncError(e.name === 'AbortError' ? 'Sync timed out' : e.message);
-      // We don't clear isDirty here so it can retry
+      setSyncError(e.message); // This will show the error on the UI
+      // Note: alert("Sync failed: " + e.message); is omitted because native alerts are blocked in the AI Studio iframe preview.
+      // The setSyncError call above already displays a highly visible red banner at the top right of the screen.
     } finally {
       clearTimeout(timeoutId);
       setTimeout(() => setIsSyncing(false), 1000);
