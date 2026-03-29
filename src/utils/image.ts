@@ -28,8 +28,9 @@ export const compressImage = (base64Str: string, maxWidth = 1024, maxHeight = 10
         ctx.imageSmoothingQuality = 'high';
         ctx.drawImage(img, 0, 0, width, height);
       }
-      // Convert to PNG as requested
-      resolve(canvas.toDataURL('image/png'));
+      // KEY CHANGE: Switch to image/jpeg and set quality to 0.7 (70%)
+      // This will usually result in a file size < 200KB for a 1024px image.
+      resolve(canvas.toDataURL('image/jpeg', 0.7));
     };
   });
 };

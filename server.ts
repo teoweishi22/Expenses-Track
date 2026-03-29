@@ -8,6 +8,7 @@ const app = express();
 const PORT = 3000;
 
 app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // Initialize Supabase client
 const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
@@ -76,9 +77,11 @@ app.get("/api/data", async (req, res) => {
       ...exp,
       paidBy: exp.payer_id,
       paymentMethod: exp.payment_method,
+      receiptUrl: exp.receipt_url, // Add this line to map the photo URL back
       // Remove database-only fields to keep frontend clean if necessary
       payer_id: undefined,
       payment_method: undefined,
+      receipt_url: undefined,
       room_id: undefined
     }));
 
