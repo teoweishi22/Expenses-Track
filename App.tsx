@@ -628,9 +628,9 @@ const App: React.FC = () => {
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
       results = results.filter(exp => 
-        exp.description.toLowerCase().includes(query) || 
-        exp.category.toLowerCase().includes(query) ||
-        exp.paymentMethod.toLowerCase().includes(query)
+        (exp.description || '').toLowerCase().includes(query) || 
+        (exp.category || '').toLowerCase().includes(query) ||
+        (exp.paymentMethod || '').toLowerCase().includes(query)
       );
     }
     return results;

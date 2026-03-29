@@ -7,7 +7,6 @@ dotenv.config();
 const app = express();
 const PORT = 3000;
 
-// Ensure large photos don't break the body parser
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
@@ -20,7 +19,7 @@ const supabase = (supabaseUrl && supabaseServiceKey)
   ? createClient(supabaseUrl, supabaseServiceKey)
   : null;
 
-// --- API ROUTES ---
+// --- API Routes ---
 
 app.get("/api/health", (req, res) => {
   res.json({ 
@@ -48,13 +47,13 @@ app.get("/api/data", async (req, res) => {
     const { data: categories, error: cError } = await supabase.from('categories').select('*').eq('room_id', roomId);
     const { data: methods, error: mError } = await supabase.from('payment_methods').select('*').eq('room_id', roomId);
 
-    if (expError || pError || cError || mError) throw new Error("Failed to fetch data");
+    if (expError || pError || cError || mError) throw new Error("Failed to fetch data from Supabase");
 
     const mappedExpenses = (expenses || []).map(exp => ({
       ...exp,
       paidBy: exp.payer_id,
       paymentMethod: exp.payment_method,
-      receiptUrl: exp.receipt_url, 
+      receiptUrl: exp.receipt_url, // Maps photo correctly
       payer_id: undefined,
       payment_method: undefined,
       receipt_url: undefined,
@@ -67,29 +66,6 @@ app.get("/api/data", async (req, res) => {
       categories: (categories || []).map(c => c.name), 
       paymentMethods: (methods || []).map(m => m.name) 
     });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.get("/api/notes", async (req, res) => {
-  if (!supabase) return res.status(500).json({ error: "Supabase not configured" });
-  try {
-    const { data: notes, error } = await supabase.from("notes").select("*").order('created_at', { ascending: false });
-    if (error) throw error;
-    res.json(notes);
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.post("/api/notes", async (req, res) => {
-  if (!supabase) return res.status(500).json({ error: "Supabase not configured" });
-  const { title, content } = req.body;
-  try {
-    const { data, error } = await supabase.from("notes").insert([{ title, content }]).select();
-    if (error) throw error;
-    res.json(data[0]);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -112,6 +88,7 @@ app.post("/api/sync", async (req, res) => {
         const { error: pError } = await supabase.from('people').upsert(mappedPeople);
         if (pError) throw new Error(`People Sync Failed: ${pError.message}`);
         
+        // FIX: Added single quotes for SQL IN clause
         const currentIds = mappedPeople.map(p => `'${p.id}'`).join(',');
         await supabase.from('people').delete().eq('room_id', roomId).not('id', 'in', `(${currentIds})`);
       } else {
@@ -131,6 +108,7 @@ app.post("/api/sync", async (req, res) => {
         const { error: expError } = await supabase.from('expenses').upsert(mappedExpenses);
         if (expError) throw new Error(`Expenses Sync Failed: ${expError.message}`);
         
+        // FIX: Added single quotes for SQL IN clause
         const currentExpIds = mappedExpenses.map(e => `'${e.id}'`).join(',');
         await supabase.from('expenses').delete().eq('room_id', roomId).not('id', 'in', `(${currentExpIds})`);
       } else {
@@ -176,11 +154,8 @@ app.post("/api/sync", async (req, res) => {
   }
 });
 
-
-// === CRITICAL VERCEL FIX ===
-// ONLY execute the local server functions if we are NOT on Vercel.
-// Vercel handles routing automatically, and running this inside a serverless
-// function causes it to hang indefinitely.
+// === VERCEL FIX ===
+// Do not run local app.listen or Vite when deployed on Vercel
 if (process.env.VERCEL !== "1") {
   async function startServer() {
     if (process.env.NODE_ENV !== "production") {
@@ -204,5 +179,4 @@ if (process.env.VERCEL !== "1") {
   startServer();
 }
 
-// Export strictly for Vercel's serverless environment
 export default app;

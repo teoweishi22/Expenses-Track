@@ -10,15 +10,16 @@ interface ChartsProps {
 
 const Charts: React.FC<ChartsProps> = ({ expenses }) => {
   const categoryData = expenses.reduce((acc: any[], curr) => {
-    const existing = acc.find(item => item.name === curr.category);
+    const catName = curr.category || 'Uncategorized'; // FIX: Safe fallback
+    const existing = acc.find(item => item.name === catName);
     if (existing) {
       existing.value += curr.amount;
     } else {
-      acc.push({ name: curr.category, value: curr.amount });
+      acc.push({ name: catName, value: curr.amount });
     }
     return acc;
   }, []);
-
+  
   const recentSpending = expenses
     .slice(-7)
     .map(e => ({
