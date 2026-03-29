@@ -150,8 +150,8 @@ app.post("/api/sync", async (req, res) => {
           throw new Error(`People Sync Failed: ${pError.message}`);
         }
         
-        const currentIds = mappedPeople.map(p => p.id);
-        const { error: delError } = await supabase.from('people').delete().eq('room_id', roomId).not('id', 'in', `(${currentIds.join(',')})`);
+        const currentIds = mappedPeople.map(p => `'${p.id}'`).join(',');
+        const { error: delError } = await supabase.from('people').delete().eq('room_id', roomId).not('id', 'in', `(${currentIds})`);
         if (delError) console.warn("People Cleanup Warning:", delError.message);
       } else {
         await supabase.from('people').delete().eq('room_id', roomId);
@@ -181,8 +181,8 @@ app.post("/api/sync", async (req, res) => {
           throw new Error(`Expenses Sync Failed: ${expError.message}`);
         }
         
-        const currentIds = mappedExpenses.map(e => e.id);
-        const { error: delError } = await supabase.from('expenses').delete().eq('room_id', roomId).not('id', 'in', `(${currentIds.join(',')})`);
+        const currentExpIds = mappedExpenses.map(e => `'${e.id}'`).join(',');
+        const { error: delError } = await supabase.from('expenses').delete().eq('room_id', roomId).not('id', 'in', `(${currentExpIds})`);
         if (delError) console.warn("Expenses Cleanup Warning:", delError.message);
       } else {
         await supabase.from('expenses').delete().eq('room_id', roomId);
