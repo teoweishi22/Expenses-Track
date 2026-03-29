@@ -39,7 +39,7 @@ const Notes: React.FC = () => {
       setNewNote({ title: '', content: '' });
       await fetchNotes();
     } catch (err: any) {
-      alert(err.message);
+      setError(err.message);
     } finally {
       setIsSubmitting(false);
     }

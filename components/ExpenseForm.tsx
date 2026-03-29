@@ -42,6 +42,7 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({
   const [selectedSplitIds, setSelectedSplitIds] = useState<string[]>(
     initialData?.splits.map(s => s.personId) || [people[0]?.id || 'me']
   );
+  const [error, setError] = useState<string | null>(null);
 
   // Synchronize split with payer if it's a personal expense
   useEffect(() => {
@@ -57,15 +58,16 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setError(null);
     if (!description || totalAmountValue <= 0) {
-      alert("Please fill in description and a valid amount.");
+      setError("Please fill in description and a valid amount.");
       return;
     }
 
     const currentSplits = isPersonal ? [paidBy] : selectedSplitIds;
 
     if (currentSplits.length === 0) {
-      alert("Please select at least one person to split the expense with.");
+      setError("Please select at least one person to split the expense with.");
       return;
     }
 
@@ -130,11 +132,7 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({
           {initialData && onDeleteExpense && (
             <button 
               type="button" 
-              onClick={() => {
-                if (confirm('Are you sure you want to delete this expense?')) {
-                  onDeleteExpense(initialData.id);
-                }
-              }}
+              onClick={() => onDeleteExpense(initialData.id)}
               className="text-rose-500 hover:text-rose-700 transition-colors"
             >
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -381,6 +379,12 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({
           </div>
         )}
       </div>
+
+      {error && (
+        <div className="bg-rose-50 text-rose-600 p-3 rounded-xl text-sm font-medium border border-rose-100 mt-4">
+          {error}
+        </div>
+      )}
 
       <button
         type="submit"

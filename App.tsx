@@ -44,6 +44,45 @@ const App: React.FC = () => {
   const [isSupabaseConnected, setIsSupabaseConnected] = useState<boolean | null>(null);
   const roomId = 'private';
   
+  // Custom Prompt Modal State
+  const [promptModal, setPromptModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    defaultValue: string;
+    isConfirmOnly?: boolean;
+    onConfirm: (val: string | null) => void;
+  }>({ isOpen: false, title: '', defaultValue: '', onConfirm: () => {} });
+
+  const showPrompt = (title: string, defaultValue: string = ''): Promise<string | null> => {
+    return new Promise((resolve) => {
+      setPromptModal({
+        isOpen: true,
+        title,
+        defaultValue,
+        isConfirmOnly: false,
+        onConfirm: (val: string | null) => {
+          setPromptModal(prev => ({ ...prev, isOpen: false }));
+          resolve(val);
+        }
+      });
+    });
+  };
+
+  const showConfirm = (title: string): Promise<boolean> => {
+    return new Promise((resolve) => {
+      setPromptModal({
+        isOpen: true,
+        title,
+        defaultValue: '',
+        isConfirmOnly: true,
+        onConfirm: (val: string | null) => {
+          setPromptModal(prev => ({ ...prev, isOpen: false }));
+          resolve(val !== null);
+        }
+      });
+    });
+  };
+
   const triggerSync = () => {
     setIsDirty(true);
   };
@@ -302,14 +341,16 @@ const App: React.FC = () => {
     triggerSync();
   };
 
-  const handleDeleteExpense = (id: string) => {
-    setExpenses(prev => prev.filter(exp => exp.id !== id));
-    setEditingExpense(null);
-    triggerSync();
+  const handleDeleteExpense = async (id: string) => {
+    if (await showConfirm('Are you sure you want to delete this expense?')) {
+      setExpenses(prev => prev.filter(exp => exp.id !== id));
+      setEditingExpense(null);
+      triggerSync();
+    }
   };
 
-  const handleAddPerson = () => {
-    const name = prompt("Enter person's name:");
+  const handleAddPerson = async () => {
+    const name = await showPrompt("Enter person's name:");
     if (!name) return;
     const newPerson: Person = {
       id: uuidv4(),
@@ -326,31 +367,41 @@ const App: React.FC = () => {
     triggerSync();
   };
 
-  const handleRenamePerson = (person: Person) => {
-    const newName = prompt("Rename person:", person.name);
+  const handleRenamePerson = async (person: Person) => {
+    const newName = await showPrompt("Rename person:", person.name);
     if (newName && newName !== person.name) {
       handleUpdatePerson(person.id, { name: newName });
     }
   };
 
-  const handleDeletePerson = (id: string) => {
+  const handleDeletePerson = async (id: string) => {
     if (id === 'me') {
       return;
     }
-    setPeople(prev => prev.filter(p => p.id !== id));
-    triggerSync();
+    
+    // Check if person has expenses
+    const hasExpenses = expenses.some(exp => exp.paidBy === id || exp.splitBetween.some(split => split.personId === id));
+    if (hasExpenses) {
+      setSyncError("Cannot delete person because they are involved in existing expenses. Please delete or reassign their expenses first.");
+      return;
+    }
+
+    if (await showConfirm('Are you sure you want to delete this person?')) {
+      setPeople(prev => prev.filter(p => p.id !== id));
+      triggerSync();
+    }
   };
 
-  const handleAddCategory = () => {
-    const name = prompt("Enter new category name:");
+  const handleAddCategory = async () => {
+    const name = await showPrompt("Enter new category name:");
     if (name && !categories.includes(name)) {
       setCategories(prev => [...prev, name]);
       triggerSync();
     }
   };
 
-  const handleEditCategory = (oldName: string) => {
-    const newName = prompt("Rename category:", oldName);
+  const handleEditCategory = async (oldName: string) => {
+    const newName = await showPrompt("Rename category:", oldName);
     if (newName && newName !== oldName && !categories.includes(newName)) {
       setCategories(prev => prev.map(c => c === oldName ? newName : c));
       // Update historical expenses
@@ -359,28 +410,42 @@ const App: React.FC = () => {
     }
   };
 
-  const handleDeleteCategory = (cat: string) => {
+  const handleDeleteCategory = async (cat: string) => {
     if (categories.length <= 1) {
       return;
     }
-    setCategories(prev => prev.filter(c => c !== cat));
-    triggerSync();
+    const hasExpenses = expenses.some(exp => exp.category === cat);
+    if (hasExpenses) {
+      setSyncError(`Cannot delete category "${cat}" because it is used in existing expenses.`);
+      return;
+    }
+    if (await showConfirm(`Are you sure you want to delete category "${cat}"?`)) {
+      setCategories(prev => prev.filter(c => c !== cat));
+      triggerSync();
+    }
   };
 
-  const handleAddPaymentMethod = () => {
-    const name = prompt("Enter payment method or merchant (e.g., GrabPay, TNG, Visa):");
+  const handleAddPaymentMethod = async () => {
+    const name = await showPrompt("Enter payment method or merchant (e.g., GrabPay, TNG, Visa):");
     if (name && !paymentMethods.includes(name)) {
       setPaymentMethods(prev => [...prev, name]);
       triggerSync();
     }
   };
 
-  const handleDeletePaymentMethod = (method: string) => {
+  const handleDeletePaymentMethod = async (method: string) => {
     if (paymentMethods.length <= 1) {
       return;
     }
-    setPaymentMethods(prev => prev.filter(m => m !== method));
-    triggerSync();
+    const hasExpenses = expenses.some(exp => exp.paymentMethod === method);
+    if (hasExpenses) {
+      setSyncError(`Cannot delete payment method "${method}" because it is used in existing expenses.`);
+      return;
+    }
+    if (await showConfirm(`Are you sure you want to delete payment method "${method}"?`)) {
+      setPaymentMethods(prev => prev.filter(m => m !== method));
+      triggerSync();
+    }
   };
 
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -395,15 +460,15 @@ const App: React.FC = () => {
     }
   };
 
-  const handleSettleUp = (personId: string, maxAmount: number) => {
+  const handleSettleUp = async (personId: string, maxAmount: number) => {
     const personName = people.find(p => p.id === personId)?.name || 'Someone';
-    const input = prompt(`Enter payment amount from ${personName} (Max ${CURRENCY} ${maxAmount.toFixed(2)}):`, maxAmount.toFixed(2));
+    const input = await showPrompt(`Enter payment amount from ${personName} (Max ${CURRENCY} ${maxAmount.toFixed(2)}):`, maxAmount.toFixed(2));
     
     if (input === null) return;
     const amount = parseFloat(input);
 
     if (isNaN(amount) || amount <= 0) {
-      alert("Please enter a valid amount.");
+      setSyncError("Please enter a valid amount.");
       return;
     }
 
@@ -431,7 +496,7 @@ const App: React.FC = () => {
     }
 
     if (finalData.length === 0) {
-      alert("No expenses found in this range to export.");
+      setSyncError("No expenses found in this range to export.");
       return;
     }
 
@@ -489,7 +554,7 @@ const App: React.FC = () => {
     }
 
     if (finalData.length === 0) {
-      alert("No expenses found in this range to export.");
+      setSyncError("No expenses found in this range to export.");
       return;
     }
 
@@ -627,7 +692,7 @@ const App: React.FC = () => {
 
   const generateSyncLink = () => {
     const link = window.location.origin + window.location.pathname;
-    prompt("Share this link with your group for live updates:", link);
+    showPrompt("Share this link with your group for live updates:", link);
   };
 
   return (
@@ -1044,6 +1109,53 @@ const App: React.FC = () => {
               alt="Receipt Zoomed" 
               className="max-w-full max-h-[80vh] object-contain rounded-xl shadow-2xl border border-white/10" 
             />
+          </div>
+        </div>
+      )}
+
+      {promptModal.isOpen && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-5">
+              <h3 className="text-lg font-bold text-slate-800 mb-4">{promptModal.title}</h3>
+              {!promptModal.isConfirmOnly && (
+                <input 
+                  type="text" 
+                  autoFocus
+                  defaultValue={promptModal.defaultValue}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      promptModal.onConfirm(e.currentTarget.value);
+                    } else if (e.key === 'Escape') {
+                      promptModal.onConfirm(null);
+                    }
+                  }}
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-medium"
+                />
+              )}
+            </div>
+            <div className="flex border-t border-slate-100">
+              <button 
+                onClick={() => promptModal.onConfirm(null)}
+                className="flex-1 py-3 text-sm font-bold text-slate-500 hover:bg-slate-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <div className="w-px bg-slate-100"></div>
+              <button 
+                onClick={(e) => {
+                  if (promptModal.isConfirmOnly) {
+                    promptModal.onConfirm('yes');
+                  } else {
+                    const input = e.currentTarget.parentElement?.previousElementSibling?.querySelector('input');
+                    promptModal.onConfirm(input?.value || '');
+                  }
+                }}
+                className="flex-1 py-3 text-sm font-bold text-indigo-600 hover:bg-indigo-50 transition-colors"
+              >
+                Confirm
+              </button>
+            </div>
           </div>
         </div>
       )}
